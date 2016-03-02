@@ -1,0 +1,1039 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# ============================================================
+# Vector Image Processing for Meandering Rivers Satellite Data
+# ============================================================
+
+# ------------------------------------------------------------
+
+# Module: Meanders::Vector
+# Author: Federico Monegaglia
+# Location: University of Trento
+# Date: September, 2015
+# Last Modified: September, 2015
+
+# Description: Collection of Functions for Extracting
+#              Morphological Data from Vector Images
+
+# Requires:   - Numpy
+#             - Scipy
+#             - Matplotlib
+
+# ------------------------------------------------------------
+
+# Modules and Packages
+# ====================
+from __future__ import division
+import os, sys, shutil
+import numpy as np
+import scipy as sp
+from scipy import interpolate, integrate, signal, stats, optimize
+from numpy.lib import stride_tricks
+import matplotlib.pyplot as plt
+from svg import savgol_filter as savgol # Just a hardcopy of scipy.signal.savgol_filter
+
+try:
+    import mlpy.wavelet as wave # This goes at the beginning (using mlpy 3.5 COMPILED FROM SOURCE)
+    HAS_MLPY = True
+except ImportError:
+    HAS_MLPY = False
+
+# Classes
+# =======
+class Line2D( object ):
+    # FIX : use decorators
+    d = {} # Dictionary
+    
+    def __init__( self, line ):
+        self.x = line[0]
+        self.y = line[1]
+        self.d['x'] = self.x
+        self.d['y'] = self.y
+                
+    def attr( self, key, val ):
+        self.d[key] = val
+
+class GeoReference( object ):
+    '''Provide Georeferenced Coordinates for an Image Object'''
+
+    def __init__( self, I, GeoTransf ):
+        self.I = I
+        self.GeoTransf = GeoTransf
+
+    def __call__( self, X, Y ):
+        XX = np.arange( 1, self.I.T.shape[0]+1 ) * self.GeoTransf['PixelSize'] + self.GeoTransf['X']
+        YY = (np.arange(1, self.I.T.shape[1]+1 )-self.I.T.shape[1]) * self.GeoTransf['PixelSize'] + self.GeoTransf['Y']
+        return X*self.GeoTransf['PixelSize']+XX[0], Y*self.GeoTransf['PixelSize']+YY[0]
+
+
+class AxisReader( object ):
+    '''
+    Read Pruned and Skeletonized Axis/Distance Image and
+    extract vector data.
+    '''
+
+    primitives = ([[1,0,0],
+                   [0,1,0],
+                   [0,0,0]],
+                  [[0,1,0],
+                   [0,1,0],
+                   [0,0,0]])
+
+    def __init__( self, I, first_point=None, start_from=None, method='width', verbose=True, call_depth=0, jidx=[] ):
+        '''Constructor'''
+
+        self.I = I # Image
+        # Apply A Filter on Border in order to avoid errors
+        self.I[0,:] = 0
+        self.I[:,0] = 0
+        self.I[-1,:] = 0
+        self.I[:,-1] = 0
+        self.BI = np.where( I>0, 1, 0 ) # Binary
+        self.hits = self.BI.copy() # For binary search
+        self.first_point = first_point
+        self.start_from = 't'
+        if start_from is not None: self.start_from = start_from
+        self.verbose = verbose
+        self.method = method
+        self.call_depth = call_depth
+        self.jidx = jidx
+
+    def GetJunction( self, idx ):
+        '''Junction Indexes List'''
+        if len( self.jidx ) > 0: idx += self.jidx[-1]
+        self.jidx.append( idx )
+
+    def BuildStrides( self ):
+        '''Build cache-friendly Strides Array'''
+        n = 3
+        i = 1 + self.BI.shape[0] - 3
+        j = 1 + self.BI.shape[1] - 3
+        self.strides = stride_tricks.as_strided( self.BI, (i,j,n,n),
+                                                 strides=2*self.BI.strides )
+
+
+    def GetFirstPoint( self ):
+
+        ## TODO :: fix inflow direction
+
+        if self.first_point is not None:
+            self.i0, self.j0 = self.first_point
+            return None
+
+        if self.start_from == 't':
+            for i in xrange( self.BI.shape[0]-1, 0, -1 ):
+                if np.all( self.BI[i,:] == 0 ): continue
+                for j in xrange( 1, self.BI.shape[1]-1 ):
+                    for primitive in self.primitives:
+                        for iSide in xrange( 4 ):
+                            seed = np.rot90( primitive, iSide )
+                            if ( self.strides[i-1,j-1] == seed ).all():
+                                self.i0, self.j0 = i, j
+                                return None
+
+        elif self.start_from == 'b':
+            for i in xrange( 1, self.BI.shape[0] ):
+                if np.all( self.BI[i,:] == 0 ): continue
+                for j in xrange( 1, self.BI.shape[1]-1 ):
+                    for primitive in self.primitives:
+                        for iSide in xrange( 4 ):
+                            seed = np.rot90( primitive, iSide )
+                            if ( self.strides[i-1,j-1] == seed ).all():
+                                self.i0, self.j0 = i, j
+                                return None
+
+        elif self.start_from == 'l':
+            for j in xrange( 1, self.BI.shape[1]-1 ):
+                if np.all( self.BI[:,j] == 0 ): continue
+                for i in xrange( 1, self.BI.shape[0]-1 ):
+                    for primitive in self.primitives:
+                        for iSide in xrange( 4 ):
+                            seed = np.rot90( primitive, iSide )
+                            if ( self.strides[i-1,j-1] == seed ).all():
+                                self.i0, self.j0 = i, j
+                                return None
+
+        elif self.start_from == 'r':
+            for j in xrange( self.BI.shape[1]-1, 0, -1 ):
+                if np.all( self.BI[:,j] == 0 ): continue
+                for i in xrange( 1, self.BI.shape[0]-1 ):
+                    for primitive in self.primitives:
+                        for iSide in xrange( 4 ):
+                            seed = np.rot90( primitive, iSide )
+                            if ( self.strides[i-1,j-1] == seed ).all():
+                                self.i0, self.j0 = i, j
+                                return None
+
+        raise IndexError, 'First Point Not Found!'    
+
+
+    def NeiDist( self, idx1, idx2 ):
+        '''Cartesian Distance between pixel cells'''
+        i1, j1 = idx1
+        i2, j2 = idx2
+        return np.sqrt( (i1-i2)**2 + (j1-j2)**2 )
+
+
+    def Vectorize( self, MAXITER=100000 ):
+
+        '''Find Indexes and Points'''
+
+        I, J = [ self.i0 ], [ self.j0 ]
+        N = 0
+        ijunct = 0 # Junction Index
+        junct_found = False
+        for ITER in xrange( MAXITER ):
+            i0, j0 = I[-1], J[-1]            
+            self.hits[i0,j0] = 0
+            seed = self.hits[i0-1:i0+2, j0-1:j0+2]
+            pos = zip( *np.where( seed > 0 ) )
+            if len( pos ) == 0:
+                break # End Point Found
+            elif len( pos ) == 1:
+                # Put Coordinates in Global Reference System
+                i, j = pos[0]
+                i += i0 - 1
+                j += j0 - 1    
+                I.append(i), J.append(j)
+                N += 1
+                self.offset = self.hits.shape[1] - j # for GeoReferencing
+            elif len( pos ) > 1:
+                jdist = self.NeiDist( pos[0], pos[1] ) 
+                if len( pos ) == 2 and np.abs(jdist-1) < 1.e-08:
+                    # Two Neighboring cells are found. Just take the closest one
+                    dist = np.zeros( len(pos) )
+                    for ipos, p in enumerate(pos):
+                        dist[ipos] = np.sqrt( (1 - p[0])**2 + (1 - p[1])**2 )
+                    idist = dist.argmin()
+                    pos = [ pos[idist] ]
+                    # Put Coordinates in Global Reference System
+                    i, j = pos[0]
+                    i += i0 - 1
+                    j += j0 - 1
+                    I.append(i), J.append(j)
+                    N += 1
+                    self.offset = self.hits.shape[1] - j # for GeoReferencing
+
+                else: # We find a junction between two or more branches
+                    # Recursively Compute the Longest Path to the end of the channel
+                    # By Recursively Removing Branch Junction Points
+                    print '   Found Channel Junction at ', i0, j0, 'n branches %d. ' % len( pos ), \
+                        'Level of recursion: %d' % ( self.call_depth )
+
+                    jncsl = np.zeros( len( pos ) ) # Total Lengths of the Following Branches at Junction
+                    jncsw = np.zeros( len( pos ) ) # Average Width of the Following Branches at Junction
+                    depths = np.zeros( len( pos ), dtype=int )
+                    self.GetJunction( N )                    
+                    jhits = self.hits.copy()
+                    axijs = []
+
+                    for ij in xrange( len(pos) ):
+                        # For each of the Junctions is created a recursive instance
+                        # with a maximum iteration number of 50 cells
+                        # the one width the maximum average width is chosen
+                        first_point = ( pos[ij][0]+i0-1, pos[ij][1]+j0-1 ) # Initial Point of the Local Branch
+                        jhits[ pos[abs(ij-1)][0]+i0-1, pos[abs(ij-1)][1]+j0-1  ] = 0 # Remove the other ones
+
+                        axr = AxisReader( self.I*jhits, first_point=first_point,
+                                          verbose=True, method=self.method,
+                                          call_depth=self.call_depth+1, jidx=self.jidx )
+
+                        if self.method == 'width': axij = axr( MAXITER=200 )
+                        elif self.method == 'length': axij = axr( MAXITER=MAXITER )
+                        elif self.method == 'std': axij = axr( MAXITER=MAXITER )
+
+                        axijs.append( axij )
+                        jncsl[ij] = axij[2].size # Total Path Length
+                        jncsw[ij] = axij[2].mean() # Total Path Average Width
+                        depths[ij] = axr.call_depth
+
+                    # Now Remove Narrower Branch Iteratively
+                    if self.method == 'width':
+                        for ij in xrange( len(pos)-1 ):
+                            # Remove Narrower Branches from the Hit&Miss Matrix
+                            self.hits[ axijs[jncsw.argmin()][1][0], axijs[jncsw.argmin()][0][0] ] = 0 # Delete Averagely Narrowest Path
+                            np.delete( jncsw, jncsw.argmin() )
+
+                    elif self.method == 'length':
+                        # Recursively Append the Following Reach
+                        _J, _I, _ = axijs[ jncsl.argmax() ] # Longest Path
+                        self.call_depth += depths[ jncsl.argmax() ]
+                        I.extend( _I ), J.extend( _J )
+                        break
+
+                    elif self.method == 'std':
+                        # Length Control
+                        wd = 3
+                        cols = ['g', 'y', 'm']
+                        plt.figure()
+                        plt.imshow(self.I, cmap='spectral')
+                        for ij in xrange( len(pos) ):
+                            plt.plot(axijs[ij][0], axijs[ij][1], lw=wd, c=cols[ij], label='%s,%s' % (jncsl[ij],jncsw[ij]))
+                            wd += 1
+                            jmin = jncsl.argmin()
+                            jmax = jncsl.argmax()
+                            if jncsl[jmin]<0.75*jncsl[jmax]:
+                                # If a branch is much shorter than another one, forget about it
+                                np.delete( jncsl, jmin )
+                                np.delete( jncsw, jmin )
+                                np.delete( axijs, jmin )
+                                np.delete( depths, jmin )
+                        # Take the Widest between the remaining branches
+                        _J, _I, _ = axijs[ jncsw.argmax() ] # Widest Branch
+                        plt.plot( _J, _I, 'r', lw=1, label='!%s,%s!' %  (jncsl[jncsw.argmax()], jncsw[jncsw.argmax()]) )
+                        plt.legend()
+                        plt.show()
+                        self.call_depth = depths[ jncsw.argmax() ]
+                        I.extend( _I ), J.extend( _J )
+                        break                        
+
+        if ITER == MAXITER-1 and self.verbose:
+            print 'WARNING: Maximum number of iteration reached in axis extraction!'
+        Xpx, Ypx = np.asarray( I ), np.asarray( J )
+        Bpx = self.I[I, J]
+        # For some reason they are inverted
+        # TODO: check code
+        return [ Ypx, Xpx, Bpx ]
+
+    def __call__( self, MAXITER=100000 ):
+        self.BuildStrides()
+        self.GetFirstPoint()
+        return self.Vectorize( MAXITER=MAXITER )
+
+                
+# Functions        
+# =========
+
+
+def ReadAxisLine( I, GeoTransf, flow_from=None, method='std' ):
+
+    '''
+    Convenience function for AxisReader class.
+    Return a Line2D instance with width as attribute.
+    
+    Args
+    ====
+    I : Image array of the channel axis over black background
+    GeoTransf : Dict Containing Lower Left Corner Coordinates and
+                Pixel Size
+                - X
+                - Y
+                - PixelSize
+    Return
+    ======
+    Line2D with axis coordinates, intrinsic coordinate
+    and local width distribution dictionary attributes
+    '''
+    
+    r = AxisReader( I, start_from=flow_from, method=method )
+    [ Xpx, Ypx, Bpx ] = r()
+    print 'Axis Read with a Recursion Level of %s' % r.call_depth
+    
+    # Cut Borders (there are some issues sometimes)
+    Xpx = Xpx[10:-10]
+    Ypx = Ypx[10:-10]
+    Bpx = Bpx[10:-10]
+
+    # GeoReference
+    # ------------
+    GR = GeoReference( I, GeoTransf )
+    X, Y = GR( Xpx, Ypx )
+    B = Bpx * GeoTransf['PixelSize']
+
+    line = Line2D( [ X, Y ] )
+    line.attr( 'B', B )
+    dx = np.ediff1d( X, to_begin=0 )
+    dy = np.ediff1d( Y, to_begin=0 )
+    ds = np.sqrt( dx**2 + dy**2 )
+    s = np.cumsum( ds )
+    line.attr( 's', s )
+    line.attr( 'L', line.d['s'][-1] )
+
+    return line
+
+
+def find_nearest( array, value ):
+    '''Find closest element to value inside array'''
+    return array.flat[ np.abs( array - value ).argmin() ]
+
+            
+def InterpPCS( x, y, N=1000, s=None, with_derivatives=True, k=3 ):
+    '''
+    PCS(x, y, N=1000, s=1) - Apply Parametric Cubic Spline Interpolation
+    to the centerline axis of a meandering channel, in order to obtain
+    a continuous representation
+    '''
+    tckp, u = interpolate.splprep( [x, y], s=s, k=k ) # Parametric Representation
+    u_PCS = np.linspace( 0, 1, N ) # ArcLength
+    x_PCS, y_PCS = interpolate.splev( u_PCS, tckp, der=0 )
+    if with_derivatives:
+        d1x_PCS, d1y_PCS = interpolate.splev( u_PCS, tckp, der=1 )
+        d2x_PCS, d2y_PCS = interpolate.splev( u_PCS, tckp, der=2 )
+        return x_PCS, y_PCS, d1x_PCS, d1y_PCS, d2x_PCS, d2y_PCS
+    else:
+        return x_PCS, y_PCS
+
+
+def CurvaturePCS( *args, **kwargs ):
+    '''
+    Compute curvature of the PCS.
+    Methods:
+     * 1 - Finite differences
+     * 2 - Guneralp and Rhoads 2007 (requires spline derivatives)
+     * 3 - Schwenk et al. 2015
+    '''
+    method = kwargs.pop( 'method', 1 )
+    return_diff = kwargs.pop( 'return_diff', False )
+    apply_filter = kwargs.pop( 'apply_filter', True )
+    x = args[0]
+    y = args[1]
+    dx = np.ediff1d( x, to_begin=0 )
+    dy = np.ediff1d( y, to_begin=0 )
+    ds = np.sqrt( dx**2 + dy**2 )
+    s = np.cumsum( ds )
+    theta = np.arctan2( dy, dx )
+    for i in xrange(1,theta.size):
+        if theta[i] - theta[i-1] > np.pi: theta[i] -= 2*np.pi
+        elif theta[i] - theta[i-1] < -np.pi: theta[i] += 2*np.pi
+    if method == 1:
+        Cs = -np.gradient( theta, np.gradient(s) )
+    elif method == 2:
+        d1x = args[2]
+        d1y = args[3]
+        d2x = args[4]
+        d2y = args[5]
+        Cs = - ( d1x*d2y - d1y*d2x ) / ( d1x**2 + d1y**2 )**(3/2)
+    elif method == 3:
+        ax = x[1:-1] - x[:-2]
+        bx = x[2:] - x[:-2]
+        cx = x[2:] - x[1:-1]
+        ay = y[1:-1] - y[:-2]
+        by = y[2:] - y[:-2]
+        cy = y[2:] - y[1:-1]
+        Cs = 2 * (ay*bx - ax*by) / \
+          np.sqrt( (ax**2+ay**2) * (bx**2+by**2) * (cx**2+cy**2) )
+        # Fix First and Last Point with finite difference
+        Cs = np.concatenate((np.array( -(theta[1]-theta[0])/(s[1]-s[0] ) ), Cs,
+                             np.array( -(theta[-1]-theta[-2])/(s[-1]-s[-2]) )))
+    if apply_filter:
+        Cs[1:-1] = (Cs[:-2] + 2*Cs[1:-1] + Cs[2:]) / 4
+    if return_diff:
+        return s, theta, Cs, dx, dy, ds
+    else:
+        return s, theta, Cs
+
+    
+def WidthPCS( s, B, sPCS, kind='linear' ):
+    f = interpolate.interp1d( s, B, kind=kind )
+    return f( sPCS )
+
+
+def smooth( y, freq=200 ):
+    '''Lowpass filter (Butterworth)'''
+    b, a = signal.butter( 4, 5/(freq/2), btype='low' )
+    return signal.filtfilt( b, a, y )
+
+def smooth2( y, fs, cutoff, order=5 ):
+    nyq = 0.5*fs
+    normal_cutoff = cutoff / nyq
+    b, a = signal.butter( order, normal_cutoff, btype='low' )
+    return signal.filtfilt( b, a, y )
+
+def get_dt( name1, name2 ):
+    '''Return Time Interval in Years'''
+    t1 = os.path.splitext( os.path.split( name1 )[-1] )[0]
+    t2 = os.path.splitext( os.path.split( name2 )[-1] )[0]
+    [ y1, d1 ] = [ int( i.strip() ) for i in t1.split('_') ]
+    [ y2, d2 ] = [ int( i.strip() ) for i in t2.split('_') ]
+    T1 = y1 + d1/365
+    T2 = y2 + d2/365
+    return T2 - T1
+
+
+def MigrationRate( axis1, axis2, search_scale1, DT=1 ):
+    '''
+    MigrationRate( axis1, axis2, DT=1 ) - Return Migration Rate
+    for two consecutive planforms together with the Starting Points
+    for which Ending Point has been found
+    '''
+    from warnings import warn
+    warn( 'This Function is Deprecated. Use MigrationRate2 instead.' )
+
+    if not np.array([ isinstance(axis,Line2D) for axis in [axis1,axis2]]).any():
+        e = 'Expected 2 Line2D instances, got %s and %s instead' \
+          % ( type(axis1), type(axis2) )
+        raise TypeError, e
+    # Crossing Points
+    xc = np.zeros( axis1.x.size )
+    yc = np.zeros( axis1.x.size )
+    zc = np.zeros( axis1.x.size )
+    xc[:], yc[:], zc[:] = np.nan, np.nan, np.nan
+    norm_angle = np.arctan2( np.gradient(axis1.y),
+                             np.gradient(axis1.x) ) - np.pi/2
+    L = search_scale1 # Length where to look for the next planform's point
+    broken = False # Whether the Intersection is found, break
+    # Iterate over all the Points of the Initial Planform
+    for i in xrange( zc.size ):
+        # Define a Segment in the Migration Direction
+        P = np.array([axis1.x[i],axis1.y[i]]) # Starting Point
+        R = np.array([np.cos(norm_angle[i]),
+                      np.sin(norm_angle[i])]) * L # Ending Point
+        # Look for the Corresponding Point on the New Planform
+        for j in xrange( 1, axis2.x.size ):
+            # Define a Segment along the new Planform
+            Q = np.array([axis2.x[j-1],axis2.y[j-1]])
+            S = np.array([axis2.x[j],axis2.y[j]]) - Q
+            QP = Q - P
+            CRS = R[0]*S[1] - S[0]*R[1] # Cross Product
+            t = ( QP[0]*S[1] - S[0]*QP[1] ) / CRS
+            u = ( QP[0]*R[1] - R[0]*QP[1] ) / CRS
+            # Verify if Segments Cross within the specified range
+            if ( abs(CRS) > 0 and 0 <= abs(t) <= 1 and 0 <= abs(u) <= 1 ):
+                # Segments Intersect!
+                xc_i, yc_i = P + t*R # Find the Closest existing point
+                xci = xc_i # ( axis2.x[j-1] + axis2.x[j] )/2
+                yci = yc_i # ( axis2.y[j-1] + axis2.y[j] ) / 2
+                zci = ( np.sqrt( (xc_i - axis1.x[i])**2
+                                   + (yc_i- axis1.y[i])**2 ) ) / DT
+                if np.isnan( zc[i] ):
+                    xc[i] = xci
+                    yc[i] = yci
+                    zc[i] = zci
+                else:
+                    if zc[i] > zci:
+                        xc[i] = xci
+                        yc[i] = yci
+                        zc[i] = zci
+
+                broken = True
+                #break
+        if not broken:
+            xc[i], yc[i], zc[i] = np.nan, np.nan, np.nan
+    return xc, yc, zc
+
+def outliers( data, m=3 ):
+    d = np.abs( data - np.median(data) )
+    mdev = np.median(d)
+    s = d/mdev if mdev else 0
+    return s>m
+
+
+def PolygonCentroid( x, y, return_area=False ):
+    if not np.allclose( [x[0], y[0]], [x[-1], y[-1]] ):
+        x = np.append( x, x[0] )
+        y = np.append( y, y[0] )
+    a = x[:-1] * y[1:]
+    b = x[1:] * y[:-1]
+    A = 0.5 * (a - b).sum()
+    
+    cx = x[:-1] + x[1:]
+    cy = y[:-1] + y[1:]
+    
+    Xc = np.sum( cx*(a-b) ) / (6*A)
+    Yc = np.sum( cy*(a-b) ) / (6*A)
+    X = np.array([Xc, Yc])
+    if return_area:
+        return X, A
+    return X
+
+def MigrationRate2_0( data1, data2, DT=1,
+                    use_wavelets=False,
+                    CutFreq=None, use_apex=False,
+                    statistic_cutoff=False, Bmult=None ):
+    
+    '''
+    Identify Inflection Points and Bend Apexes in order to detect individual
+    river bends.
+    If Machine Learning mlpy package is installed, use wavelets to detect
+    meander dominant scale .
+    '''
+    
+    [ x1, y1, s1, theta1, Cs1, B1 ] = data1
+    [ x2, y2, s2, theta2, Cs2, B2 ] = data2
+
+    dx = np.full( x1.size, np.nan ) # Local Migration Rate
+    dy = np.full( x1.size, np.nan ) # Local Migration Angle
+    BUD = np.full( x1.size, np.nan ) # Upstream-Downstream of Bend Apex
+    BI1 = -np.ones( x1.size ) # Current Bend Index
+    BI2 = -np.ones( x2.size ) # Next Bend Index
+    BI12 = -np.ones( x1.size ) # Index of current bend on next planform
+    sig1 = np.zeros( x1.size ) # Bend Sinuosity (CutOff Control)
+    sig2 = np.zeros( x1.size ) # Bend Sinuosity (CutOff Control)
+    rot = np.full( x1.size, np.nan ) # Bend Rotation
+    transx = np.full( x1.size, np.nan ) # Bend Translation x
+    transy = np.full( x1.size, np.nan ) # Bend Translation y
+    Agrowth = np.full( x1.size, np.nan ) # Bend Area Growth
+
+    # Compute Cut Frequency for Curvature Filtering
+    if use_wavelets:
+        raise NotImplementedError('Bugs here')
+        scales = wave.autoscales( N=theta1.size, dt=s1[1]-s1[0], dj=0.25, wf='morlet', p=2 )
+        cwt = wave.cwt( x=theta1, dt=s1[1]-s1[0], scales=scales, wf='morlet', p=2 )
+        scale = scales[ ( (np.abs(cwt)**2 ).mean( axis=1 ) / theta1.var(axis=-1, keepdims=True) ).argmax() ]
+        CutFreq = wave.fourier_from_scales(scale, 'morlet', s1[1]-s1[0])
+        print 'Filtering out frequencies higher than %s' % CutFreq
+        Cs1 = smooth2( Cs1, s1[1]-s1[0], CutFreq )
+        Cs2 = smooth2( Cs2, s2[1]-s2[0], CutFreq )
+    else:
+        Cs1 = savgol(Cs1, 35, 4)
+        Cs2 = savgol(Cs2, 35, 4)
+    I1 =  np.where( Cs1[1:]*Cs1[:-1] < 0 )[0] # Indexes of Inflection Points
+    I2 =  np.where( Cs2[1:]*Cs2[:-1] < 0 )[0] # Indexes of Inflection 
+
+
+    ## NEW - DISTANZA E CURVATURA
+    I12 = np.full( I1.size, np.nan )
+    dists = np.full( I1.size, np.nan )
+    x2x, y2x = np.full(x2.size, np.nan) , np.full(y2.size, np.nan)
+    x2x[I2], y2x[I2] = x2[I2], y2[I2]
+    for i in xrange( I1.size-1 ): # We skip head and tail
+        dist = np.sqrt( (x1[I1][i]-x2x)**2 + (y1[I1][i]-y2x)**2 )
+        # Remove those with opponite curvature
+        kdist = np.argwhere( np.isfinite(dist) ).flatten()
+        for k in kdist:
+            if Cs2[k+1]*Cs1[I1[i]+1] < 0:
+                dist[k] = np.nan
+        imin = np.nanargmin( dist )
+        dmin = np.nanmin( dist )
+        I12[i] = imin
+        dists[i] = dmin
+        # Just in case there are more than one point going to the same point at next time step, keep the shortest path        
+        idists = np.argwhere( I12==imin ).flatten()
+        ii = dists[idists].argmin()
+        I12[idists] = np.nan
+        dists[idists] = np.nan
+        I12[idists[ii]] = imin
+        dists[idists[ii]] = dmin
+    #i_to_rm = []a
+    for i in xrange(1, I1.size): # prevent such kind of errors
+        if I12[i] < I12[i-1]:
+            I12[i] = np.nan
+
+    print '%s inflection points (on 1) were left without relative (on 2)' % np.isnan(I12).sum()
+
+
+    # Cleaned Bend Inflection Indexes
+    I1 = I1[ np.isfinite( I12 ) ]
+    I12 = I12[ np.isfinite( I12 ) ]
+    I12 = I12.astype( int )
+    
+    # Locate Bend Apexes
+    # ------------------
+    # Find Bend Apexes - Planform 1
+    J1 = np.zeros( I1.size-1, dtype=int )
+    for i, (il, ir) in enumerate(zip(I1[:-1], I1[1:])):
+        J1[i] = il+np.abs(Cs1[il:ir]).argmax()
+    # Find Bend Apexes - Planform 2
+    J2 = np.zeros( I2.size-1, dtype=int )
+    for i, (il, ir) in enumerate(zip(I2[:-1], I2[1:])):
+        J2[i] = il+np.abs(Cs2[il:ir]).argmax()
+    # Find Bend Apexes - Planform 1 -> 2
+    J12 = np.zeros( I12.size-1, dtype=int )
+    for i, (il, ir) in enumerate(zip(I12[:-1], I12[1:])):
+        J12[i] = il+np.abs(Cs2[il:ir]).argmax()
+
+    # Assign Bend Indexes
+    # -------------------
+    sigmask = np.zeros( I1.size-1, dtype=bool )
+    for i in xrange(I1.size-1): BI1[I1[i]:I1[i+1]] = i+1
+    for i in xrange(I2.size-1): BI2[I2[i]:I2[i+1]] = i+1
+    for i in xrange( I1.size-1 ):
+        BUD[ I1[i]+1:J1[i] ] = -1 # bend upstream
+        BUD[ J1[i]+1:I1[i+1] ] = +1 # bend downstream
+        BUD[ J1[i] ] = 0 # bend apex
+        BUD[ I1[i] ] = 2 # inflection point (up)
+        BUD[ I1[i+1] ] = 2 # inflection point (down)
+        sig1[ I1[i]:I1[i+1] ] = s1[I1][i+1] - s1[I1][i]
+        sig2[ I12[i]:I12[i+1] ] = s2[I12][i+1] - s2[I12][i]
+        sigmask[i] = ( (s2[I12][i+1] - s2[I12][i])  / (s1[I1][i+1] - s1[I1][i]) ) > 0.75
+
+        
+    # Compute Local Migration Rates
+    # -----------------------------
+    # This are computed bend by bend
+    # Each bend is splitted in upstream and downstream parts
+    # according to the position of bend apex, in order to maintain
+    # the connection between bend apexes at different timesteps
+    # (i.e., the bend apex remains the bend apex)
+
+    for i in xrange( I1.size-1 ):
+        if not sigmask[i]: continue
+        # Isolate Bend
+        bend_x1 = x1[ I1[i]:I1[i+1] ]
+        bend_y1 = y1[ I1[i]:I1[i+1] ]
+        bend_x2 = x2[ I12[i]:I12[i+1] ]
+        bend_y2 = y2[ I12[i]:I12[i+1] ]
+        # Isolate First Half-Bend
+        bend_x1l = x1[ I1[i]:J1[i] ]
+        bend_y1l = y1[ I1[i]:J1[i] ]
+        bend_x2l = x2[ I12[i]:J12[i] ]
+        bend_y2l = y2[ I12[i]:J12[i] ]
+        # Isolate Second Half-Bend
+        bend_x1r = x1[ J1[i]:I1[i+1] ]
+        bend_y1r = y1[ J1[i]:I1[i+1] ]
+        bend_x2r = x2[ J12[i]:I12[i+1] ]
+        bend_y2r = y2[ J12[i]:I12[i+1] ]
+        # Assign Bend Index
+        # We use the most recurring value, that is, the main bend in which
+        # the current one goes into
+        #if not np.size(np.unique( BI2[I12[i]:I12[i+1]] ))==1:
+        #    BI12[I1[i-1]:I1[i]] = 0
+        #else:
+        BI12[I1[i-1]:I1[i]] = stats.mode( BI2[I12[i]:I12[i+1]] )[0][0]
+        #BI12[I1[i-1]:I1[i]] = BI2[I12[i]:I12[i+1]][1]
+        # Now we need to reinterpolate equally spaced points
+        # of bend 2 with the same number of points of bend 1
+        # First and Second Parte of the Bend are interpolated separately,
+        # This way we are sure that migration of the bend apex is correct
+        N1 = bend_x1.size
+        N2 = bend_x2.size
+        N1l = bend_x1l.size
+        N1r = bend_x1r.size
+        N2l = bend_x2l.size
+        N2r = bend_x2r.size
+        if use_apex:
+            if N1l<=3 or N1r<=3: continue
+            # If the 2nd planform has less points than the 1st, we have to remove some of them
+            if N2l > N1l:
+                idx = np.full( N2l, True, bool )
+                idx[ np.random.choice( np.arange(1,N2l-1), N2l-N1l, replace=False ) ] = False
+                bend_x2l = bend_x2l[ idx ]
+                bend_y2l = bend_y2l[ idx ]
+            if N2r > N1r:
+                idx = np.full( N2r, True, bool )
+                idx[ np.random.choice( np.arange(1,N2r-1), N2r-N1r, replace=False ) ] = False
+                bend_x2r = bend_x2r[ idx ]
+                bend_y2r = bend_y2r[ idx ]
+            if bend_x2l.size <= 3 or bend_x2r.size <= 3: continue # We have some problems here with the O(3) spline
+            # Now we can Interpolate
+            bend_x2l, bend_y2l = InterpPCS( bend_x2l, bend_y2l, N=N1l, with_derivatives=False )
+            bend_x2r, bend_y2r = InterpPCS( bend_x2r, bend_y2r, N=N1r, with_derivatives=False )
+            # Concatenate Upstream and Downstream part of the bend
+            bend_x1 = np.concatenate( (bend_x1l, bend_x1r) )
+            bend_y1 = np.concatenate( (bend_y1l, bend_y1r) )
+            bend_x2 = np.concatenate( (bend_x2l, bend_x2r) )
+            bend_y2 = np.concatenate( (bend_y2l, bend_y2r) )
+        else:
+            # If the 2nd planform has less points than the 1st, we have to remove some of them
+            if N2 < N1:
+                idx = np.full( N2, True, bool )
+                idx[ np.random.choice( np.arange(1,N2-1), N2-N1, replace=False ) ] = False
+                bend_x2 = bend_x2[ idx ]
+                bend_y2 = bend_y2[ idx ]
+            if bend_x2.size <= 3: continue
+            bend_x2, bend_y2 = InterpPCS( bend_x2, bend_y2, N=N1, with_derivatives=False )
+        # Compute Migration Rates for the whole bend
+        dxi = bend_x2 - bend_x1
+        dyi = bend_y2 - bend_y1
+        dx[ I1[i]:I1[i+1] ] = dxi
+        dy[ I1[i]:I1[i+1] ] = dyi
+
+
+        # Compute Total Rotation and Translation
+        # -------------------------------------
+        # MidPoint between Inflection Points
+        x0_1 = 0.5 * (bend_x1[0] + bend_x1[-1])
+        y0_1 = 0.5 * (bend_y1[0] + bend_y1[-1])
+        x0_2 = 0.5 * (bend_x2[0] + bend_x2[-1])
+        y0_2 = 0.5 * (bend_y2[0] + bend_y2[-1])
+        # Slope of the bend Axes
+        m_1 = (bend_y1r[0] - y0_1) / (bend_x1r[0] - x0_1)
+        m_2 = (bend_y2r[0] - y0_2) / (bend_x2r[0] - x0_2)
+        # Bend Rotation
+        rot[I1[i]:I1[i+1]] = np.arctan( m_2 ) - np.arctan( m_1 )
+        # Centroid Translation
+        [X1, Y1], A1 = PolygonCentroid( bend_x1, bend_y1, return_area=True )
+        [X2, Y2], A2 = PolygonCentroid( bend_x2, bend_y2, return_area=True )
+        transx[I1[i]:I1[i+1]] = X2 - X1
+        transy[I1[i]:I1[i+1]] = Y2 - Y1
+        Agrowth[I1[i]:I1[i+1]] = A2 - A1
+
+    # Migration Rates above the whole Planform
+    dz = np.sqrt( dx**2 + dy**2 )
+    dxr = dx.copy()
+    dyr = dy.copy()
+    dzr = dz.copy()
+
+    #return Cs1, BI1, BI12, BUD, dxr, dyr, dzr/DT, rot, transx, transy, Agrowth
+
+    if statistic_cutoff:
+        rm = outliers( dz )
+        dxr[ rm ] = np.nan # Bound Local Migration Rate to a Maximum
+        dyr[ rm ] = np.nan # Bound Local Migration Rate to a Maximum
+        dzr[ rm ] = np.nan # Bound Local Migration Rate to a Maximumx
+    else:
+        if Bmult is not None:
+            dxr[ dz > B1.mean()*Bmult*DT ] = np.nan # Bound Local Migration Rate to a Maximum
+            dyr[ dz > B1.mean()*Bmult*DT ] = np.nan # Bound Local Migration Rate to a Maximum
+            dzr[ dz > B1.mean()*Bmult*DT ] = np.nan # Bound Local Migration Rate to a Maximumx
+        else : # We make sure that the bend does not decrease significantly its length
+            pass
+            #dxr[ sig1 > 1.5*sig2 ] = np.nan
+            #dyr[ sig1 > 1.5*sig2 ] = np.nan
+            #dzr[ sig1 > 1.5*sig2 ] = np.nan
+
+    # Assume Bends with many NaNs are undergone CutOff
+    for i in xrange( 1, I1.size ):
+        continue
+        il, ir = I1[i-1], I1[i]
+        Nelem = ir - il
+        Nnans = np.count_nonzero( np.isnan( dzr[il:ir] ) )
+        if Nnans / Nelem > 0.6:
+            dzr[il:ir] = np.nan
+            dxr[il:ir] = np.nan
+            dyr[il:ir] = np.nan
+            BI12[il:ir] = -1 # Remove Bend Connection if CutOff Occurred
+        else: # If there is no cutoff, reset back the outliers (they may be correct)
+            dxr[il:ir] = dx[il:ir]
+            dyr[il:ir] = dy[il:ir]
+            dzr[il:ir] = dz[il:ir]
+
+
+    return Cs1, BI1, BI12, BUD, dxr, dyr, dzr/DT, rot, transx, transy, Agrowth
+
+
+
+
+
+
+
+
+
+def MigrationRate2( data1, data2, DT=1, Bmult=3,
+                    use_wavelets=HAS_MLPY,
+                    cflim=None, return_cf=False):
+    
+    '''
+    Identify Inflection Points and Bend Apexes in order to detect individual
+    river bends.
+    '''
+    
+    # Required Data
+    [ x1, y1, s1, theta1, Cs1, B1 ] = data1[:6]
+    [ x2, y2, s2, theta2, Cs2, B2 ] = data2[:6]
+
+    # Bend Indexes
+    BUD = np.full( x1.size, np.nan ) # Upstream-Downstream of Bend Apex
+    BI1 = -np.ones( x1.size ) # Current Bend Index
+    BI2 = -np.ones( x2.size ) # Next Bend Index
+    BI12 = -np.ones( x1.size ) # Index of current bend on next planform
+    # Quantification of Local and Bend Migration
+    dx = np.full( x1.size, np.nan ) # Local Migration Rate
+    dy = np.full( x1.size, np.nan ) # Local Migration Angle
+    rot = np.full( x1.size, np.nan ) # Bend Rotation
+    transx = np.full( x1.size, np.nan ) # Bend Translation x
+    transy = np.full( x1.size, np.nan ) # Bend Translation y
+    Agrowth = np.full( x1.size, np.nan ) # Bend Area Growth
+
+    if use_wavelets:
+        # Build Continuous Wavelet Transform for Planform 1
+        sgnl = (theta1 - theta1.mean()) / theta1.std()
+        dt = s1[1] - s1[0]
+        omega0 = 5
+        scales = wave.autoscales( N=sgnl.size, dt=dt, dj=0.25, wf='morlet', p=omega0 )
+        cwt = wave.cwt( x=sgnl, dt=dt, scales=scales, wf='morlet', p=omega0 )
+        power = ( cwt**2 / sgnl.var() ).mean( axis=1 )
+        imax = power.argmax()
+        smax = scales[ imax ]
+        fmax1 = wave.fourier_from_scales( scales=scales, wf='morlet', p=omega0 )[ imax ]
+        # Build Continuous Wavelet Transform for Planform 2
+        sgnl = (theta2 - theta2.mean()) / theta2.std()
+        dt = s2[1] - s2[0]
+        omega0 = 5
+        scales = wave.autoscales( N=sgnl.size, dt=dt, dj=0.25, wf='morlet', p=omega0 )
+        cwt = wave.cwt( x=sgnl, dt=dt, scales=scales, wf='morlet', p=omega0 )
+        power = ( cwt**2 / sgnl.var() ).mean( axis=1 )
+        imax = power.argmax()
+        smax = scales[ imax ]
+        fmax2 = wave.fourier_from_scales( scales=scales, wf='morlet', p=omega0 )[ imax ]
+        fmax = min( fmax1, fmax2 )
+        if cflim is not None: fmax = min( fmax, cflim )
+        Cs1 = smooth(Cs1, fmax)
+        Cs2 = smooth(Cs2, 0.9*fmax)
+
+    else:
+        sg_win = 35
+        sg_ord = 4
+        print 'Using Savitzky-Golay filter, window: %s, order: %s' % ( sg_win, sg_ord )
+        # Curvature Filtering
+        Cs1 = savgol( Cs1, sg_win, sg_ord )
+        Cs2 = savgol( Cs2, sg_win, sg_ord )
+    I1 =  np.where( Cs1[1:]*Cs1[:-1] < 0 )[0] # Indexes of Inflection Points
+    I2 =  np.where( Cs2[1:]*Cs2[:-1] < 0 )[0] # Indexes of Inflection 
+
+    print I1.size, I2.size
+
+    I12 = np.full( I1.size, np.nan )
+    dists = np.full( I1.size, np.nan )
+    x2x, y2x = np.full(x2.size, np.nan) , np.full(y2.size, np.nan)
+    x2x[I2], y2x[I2] = x2[I2], y2[I2]
+    for i in xrange( I1.size-1 ): # We skip head and tail
+        dist = np.sqrt( (x1[I1][i]-x2x)**2 + (y1[I1][i]-y2x)**2 )
+        # Remove those with opponite curvature
+        kdist = np.argwhere( np.isfinite(dist) ).flatten()
+        for k in kdist:
+            if Cs2[k+1]*Cs1[I1[i]+1] < 0:
+                dist[k] = np.nan
+        imin = np.nanargmin( dist )
+        dmin = np.nanmin( dist )
+        I12[i] = imin
+        dists[i] = dmin
+        # Just in case there are more than one point going to the same point at next time step, keep the shortest path        
+        idists = np.argwhere( I12==imin ).flatten()
+        ii = dists[idists].argmin()
+        I12[idists] = np.nan
+        dists[idists] = np.nan
+        I12[idists[ii]] = imin
+        dists[idists[ii]] = dmin
+    for i in xrange(1, I1.size): # prevent such kind of errors
+        if I12[i] < I12[i-1]:
+            I12[i-1] = np.nan
+
+    print '%s inflection points (on 1) were left without relative (on 2)' % np.isnan(I12).sum()
+
+    # Cleaned Bend Inflection Indexes
+    I1 = I1[ np.isfinite( I12 ) ]
+    I12 = I12[ np.isfinite( I12 ) ]
+    I12 = I12.astype( int )
+
+    #plt.figure()
+    #plt.plot( x1, y1, 'k' )
+    #plt.plot( x2, y2, 'r' )
+    #plt.plot( x1[I1], y1[I1], 'ko' )
+    #plt.plot( x2[I12], y2[I12], 'ro' )
+    #plt.show()
+    #sys.exit()
+    
+    # Locate Bend Apexes
+    # ------------------
+    # Find Bend Apexes - Planform 1
+    J1 = np.zeros( I1.size-1, dtype=int )
+    for i, (il, ir) in enumerate(zip(I1[:-1], I1[1:])):
+        J1[i] = il+np.abs(Cs1[il:ir]).argmax()
+    # Find Bend Apexes - Planform 2
+    J2 = np.zeros( I2.size-1, dtype=int )
+    for i, (il, ir) in enumerate(zip(I2[:-1], I2[1:])):
+        J2[i] = il+np.abs(Cs2[il:ir]).argmax()
+    # Find Bend Apexes - Planform 1 -> 2
+    J12 = np.zeros( I12.size-1, dtype=int )
+    for i, (il, ir) in enumerate(zip(I12[:-1], I12[1:])):
+        J12[i] = il+np.abs(Cs2[il:ir]).argmax()
+
+    # Assign Bend Indexes
+    # -------------------
+    sigmask = np.zeros( I1.size-1, dtype=bool )
+    for i in xrange(I1.size-1): BI1[I1[i]:I1[i+1]] = i+1
+    for i in xrange(I2.size-1): BI2[I2[i]:I2[i+1]] = i+1
+    for i in xrange( I1.size-1 ):
+        BUD[ I1[i]+1:J1[i] ] = -1 # bend upstream
+        BUD[ J1[i]+1:I1[i+1] ] = +1 # bend downstream
+        BUD[ J1[i] ] = 0 # bend apex
+        BUD[ I1[i] ] = 2 # inflection point (up)
+        BUD[ I1[i+1] ] = 2 # inflection point (down)
+        sigmask[i] = ( (s2[I12][i+1] - s2[I12][i])  / (s1[I1][i+1] - s1[I1][i]) ) > 0.75
+        
+    # Compute Local Migration Rates
+    # -----------------------------
+    # This are computed bend by bend
+    # Each bend is splitted in upstream and downstream parts
+    # according to the position of bend apex, in order to maintain
+    # the connection between bend apexes at different timesteps
+    # (i.e., the bend apex remains the bend apex)
+
+    for i in xrange( I1.size-1 ):
+        if not sigmask[i]: continue
+        # Isolate Bend
+        bend_x1 = x1[ I1[i]:I1[i+1] ]
+        bend_y1 = y1[ I1[i]:I1[i+1] ]
+        bend_x2 = x2[ I12[i]:I12[i+1] ]
+        bend_y2 = y2[ I12[i]:I12[i+1] ]
+        # Isolate First Half-Bend
+        bend_x1l = x1[ I1[i]:J1[i] ]
+        bend_y1l = y1[ I1[i]:J1[i] ]
+        bend_x2l = x2[ I12[i]:J12[i] ]
+        bend_y2l = y2[ I12[i]:J12[i] ]
+        # Isolate Second Half-Bend
+        bend_x1r = x1[ J1[i]:I1[i+1] ]
+        bend_y1r = y1[ J1[i]:I1[i+1] ]
+        bend_x2r = x2[ J12[i]:I12[i+1] ]
+        bend_y2r = y2[ J12[i]:I12[i+1] ]
+        # Assign Bend Index
+        # We use the most recurring value, that is, the main bend in which
+        # the current one goes into
+        #if not np.size(np.unique( BI2[I12[i]:I12[i+1]] ))==1:
+        #    BI12[I1[i-1]:I1[i]] = 0
+        #else:
+        BI12[I1[i-1]:I1[i]] = stats.mode( BI2[I12[i]:I12[i+1]] )[0][0]
+        #BI12[I1[i-1]:I1[i]] = BI2[I12[i]:I12[i+1]][1]
+        # Now we need to reinterpolate equally spaced points
+        # of bend 2 with the same number of points of bend 1
+        # First and Second Parte of the Bend are interpolated separately,
+        # This way we are sure that migration of the bend apex is correct
+        N1 = bend_x1.size
+        N2 = bend_x2.size
+        # If the 2nd planform has less points than the 1st, we have to remove some of them
+        if N1<=3 or N2<=3: continue # Too few points in this case
+        if N2 > N1:
+            idx = np.full( N2, True, bool )
+            idx[ np.random.choice( np.arange(1,N2-1), N2-N1, replace=False ) ] = False
+            bend_x2 = bend_x2[ idx ]
+            bend_y2 = bend_y2[ idx ]
+        bend_x2, bend_y2 = InterpPCS( bend_x2, bend_y2, N=N1, with_derivatives=False )
+        # Compute Migration Rates for the whole bend
+        dxi = bend_x2 - bend_x1
+        dyi = bend_y2 - bend_y1
+        dx[ I1[i]:I1[i+1] ] = dxi
+        dy[ I1[i]:I1[i+1] ] = dyi
+
+        # Compute Bend Rotation and Translation and Amplification
+        # -------------------------------------------------------
+        # MidPoint between Inflection Points
+        x0_1 = 0.5 * (bend_x1[0] + bend_x1[-1])
+        y0_1 = 0.5 * (bend_y1[0] + bend_y1[-1])
+        x0_2 = 0.5 * (bend_x2[0] + bend_x2[-1])
+        y0_2 = 0.5 * (bend_y2[0] + bend_y2[-1])
+        # Slope of the bend Axes
+        m_1 = (bend_y1r[0] - y0_1) / (bend_x1r[0] - x0_1)
+        m_2 = (bend_y2r[0] - y0_2) / (bend_x2r[0] - x0_2)
+        # Bend Rotation
+        rot[I1[i]:I1[i+1]] = np.arctan( m_2 ) - np.arctan( m_1 )
+        # Centroid Translation
+        [X1, Y1], A1 = PolygonCentroid( bend_x1, bend_y1, return_area=True )
+        [X2, Y2], A2 = PolygonCentroid( bend_x2, bend_y2, return_area=True )
+        transx[I1[i]:I1[i+1]] = X2 - X1
+        transy[I1[i]:I1[i+1]] = Y2 - Y1
+        Agrowth[I1[i]:I1[i+1]] = A2 - A1
+
+    # Migration Rates above the whole Planform
+    dz = np.sqrt( dx**2 + dy**2 )
+    dxr = dx.copy()
+    dyr = dy.copy()
+    dzr = dz.copy()
+
+
+    if Bmult is not None:
+        dxr[ dz > B1.mean()*Bmult*DT ] = np.nan # Bound Local Migration Rate to a Maximum
+        dyr[ dz > B1.mean()*Bmult*DT ] = np.nan # Bound Local Migration Rate to a Maximum
+        dzr[ dz > B1.mean()*Bmult*DT ] = np.nan # Bound Local Migration Rate to a Maximumx
+            
+    # Assume Bends with many NaNs are undergone CutOff
+    for i in xrange( 1, I1.size ):
+        continue
+        il, ir = I1[i-1], I1[i]
+        Nelem = ir - il
+        Nnans = np.count_nonzero( np.isnan( dzr[il:ir] ) )
+        if Nnans / Nelem > 0.6:
+            dzr[il:ir] = np.nan
+            dxr[il:ir] = np.nan
+            dyr[il:ir] = np.nan
+            BI12[il:ir] = -1 # Remove Bend Connection if CutOff Occurred
+        else: # If there is no cutoff, reset back the outliers (they may be correct)
+            dxr[il:ir] = dx[il:ir]
+            dyr[il:ir] = dy[il:ir]
+            dzr[il:ir] = dz[il:ir]
+
+    if return_cf:
+        return Cs1, BI1, BI12, BUD, dxr, dyr, dzr/DT, rot, transx, transy, Agrowth, fmax
+    return Cs1, BI1, BI12, BUD, dxr, dyr, dzr/DT, rot, transx, transy, Agrowth
+

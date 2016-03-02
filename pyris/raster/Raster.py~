@@ -1,0 +1,439 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# ============================================================
+# Raster Image Processing for Meandering Rivers Satellite Data
+# ============================================================
+
+# ------------------------------------------------------------
+
+# Module: Meanders::Raster
+# Author: Federico Monegaglia
+# Location: University of Trento
+# Date: September, 2015
+# Last Modified: September, 2015
+
+# Description: Collection of Functions for Extracting
+#              Morphological Data
+#              from RGB and Raster Images
+
+# Requires:   - Numpy
+#             - Matplotlib
+#             - Scikits-Image
+
+# ------------------------------------------------------------
+
+# Modules and Packages
+# ====================
+from __future__ import division
+import os, sys, shutil
+import numpy as np
+import scipy as sp
+from numpy.lib import stride_tricks
+from scipy import ndimage
+from skimage import io
+from skimage.io import imread
+from skimage import morphology as mm
+from skimage.filter import threshold_otsu, rank
+from skimage.util import img_as_ubyte
+from skimage.color import rgb2grey
+from matplotlib import pyplot as plt
+from matplotlib.gridspec import GridSpec
+from osgeo import gdal
+
+
+# Classes
+# =======                
+class Pruner( object ):
+    '''
+    Spurs Removal Class    
+    '''
+
+    # Primitives
+    primitives = ( np.array([[0,0,0],
+                             [1,1,0],
+                             [0,0,0]]),
+                   np.array([[1,0,0],
+                             [0,1,0],
+                             [0,0,0]]),
+                   np.array([[1,1,1],
+                             [0,1,0],
+                             [0,0,0]]),
+                   np.array([[1,1,0],
+                             [0,1,0],
+                             [0,0,0]]),
+                   np.array([[1,0,0],
+                             [1,1,0],
+                             [0,0,0]]) )
+
+    wrong_blocks = ( np.array([[0,0,0],
+                              [1,0,1],
+                              [0,0,0]]),
+                     np.array([[0,1,0],
+                               [1,0,1],
+                               [0,1,0]]) )
+    
+    smooth_block = np.array([[0,1,0],
+                             [1,0,1],
+                             [0,0,0]])
+                        
+    def __init__( self, img ):
+        # Borders are automatically removed
+        self.values = img
+        self.img = np.zeros_like(img)
+        self.img = np.where( img>0, 1, 0 )
+        self.img[0,:] = 0
+        self.img[-1,:] = 0
+        self.img[:,0] = 0
+        self.img[:,-1] = 0
+                
+    def BuildStrides( self ):
+        '''Build cache-friendly Strides Array'''
+        n = 3
+        i = 1 + self.img.shape[0] - 3
+        j = 1 + self.img.shape[1] - 3
+        self.strides = stride_tricks.as_strided( self.img, (i,j,n,n),
+                                                 strides=2*self.img.strides )
+    def ValuesStrides( self ):
+        '''Build cache-friendly Strides Array'''
+        n = 3
+        i = 1 + self.values.shape[0] - 3
+        j = 1 + self.values.shape[1] - 3
+        self.values_strides = stride_tricks.as_strided( self.values, (i,j,n,n),
+                                                 strides=2*self.values.strides )
+        
+    def Update( self, seed_elems ):
+        '''Update(i) - Prune for the current iteration i'''
+        remainder = 0 # Convergence check
+        for primitive in self.primitives:
+            for side in xrange( 4 ):
+                seed = np.rot90( primitive, side )
+                mask = ( self.strides == seed ).all( axis=(2,3) )
+                remainder += np.count_nonzero( mask )
+                self.img[1:-1,1:-1] = np.where( mask, 0, self.img[1:-1,1:-1] )
+        return remainder
+    
+    def FixWrongSkelBlocks( self ):
+        '''Here we Fix Skeletonization Process'''
+        self.BuildStrides()
+        self.ValuesStrides()
+        values_means = np.nanmean( np.where( self.values_strides==0, np.nan, self.values_strides ), axis=(2,3) )
+        for iw, wrong_block in enumerate( self.wrong_blocks ):
+            if iw == 1: Nsides=1 # Only one is required since this block is symmetric
+            else: Nsides=4
+            for side in xrange( Nsides ):
+                seed = np.rot90( wrong_block, side )
+                mask = ( self.strides == seed ).all( axis=(2,3) )
+                self.img[1:-1,1:-1] = np.where( mask, 1, self.img[1:-1,1:-1] )
+                self.values[1:-1,1:-1] = np.where( mask, values_means, self.values[1:-1,1:-1] )
+            
+    def Smooth( self, NMAX ):
+        '''Smooth() - Remove Very High Local Curvature Gradients'''
+        self.BuildStrides()
+        print '   Pruning - Smoothing Centerline'
+        for side in xrange( 4 ):
+            seed = np.rot90( self.smooth_block, side )
+            mask = ( self.strides == seed ).all( axis=(2,3) )
+            self.img[1:-1,1:-1] = np.where( mask, 1, self.img[1:-1,1:-1] )
+        self.Prune( NMAX, True )        
+                
+    def Convergence( self, remainder ):
+        '''
+        Convergence( remainder ) - check remainder in order to state convergence
+        '''
+        if remainder <= 2: return True
+        return False
+                        
+    def Prune( self, NMAX, verbose=True ):
+        '''Prune( NMAX ) - Pruning Iterations'''
+        for i in xrange( NMAX ):
+            self.BuildStrides()
+            if verbose: print '   Pruning - Iteration %03d on %3d' % ( i+1, NMAX )
+            remainder = self.Update( self.primitives )
+            if self.Convergence( remainder ):
+                if verbose:
+                    print \
+                      '   Pruning - Convergence reached after %3d iterations' \
+                      % (i+1)
+                break
+            if i+1 == NMAX:
+                print '   Pruning - Warning! Maximum number of iterations reached!'
+                print '   Pruning - Consider increasing maximum iteration number'
+
+    def __call__( self, NMAX, verbose=True, fix_skel=True, smooth=True ):
+        if fix_skel: self.FixWrongSkelBlocks()
+        self.Prune( NMAX, verbose )
+        if smooth: self.Smooth( NMAX )
+        return self.img * self.values
+
+#class Junctions( object ):
+#    '''Locate River Junctions'''
+
+class BW( object ):
+    '''
+    Interactive Black and White Image.
+    Allows Interaction with figures in order to modify the image array itself
+    by means of event handlings
+    '''
+    
+    def __init__( self, img ):
+        self.bw = img.astype( np.uint8 )
+
+    def RemovePoints( self, rm=0 ):
+        '''Remove Points by selection'''
+        plt.ioff()
+        fig = plt.figure()
+        if rm==0: plt.title('Click on Pixels you want to remove')
+        elif rm==1: plt.title('Click on Pixels you want to add')
+        cm = plt.pcolormesh( self.bw, vmin=0, vmax=1 )
+        plt.axis('equal')
+        def onclick( event ):
+            indexx = int(event.xdata)
+            indexy = int(event.ydata)
+            print("Index ({0},{1}) will be set to {2}".format(
+                    indexx, indexy, rm) )
+            self.bw[indexy, indexx] = rm
+            cm.set_array( self.bw.ravel() )
+            event.canvas.draw()
+        cid = fig.canvas.mpl_connect( 'button_press_event', onclick )
+        plt.show()
+        
+    def RemoveRectangle( self, rm=0 ):
+        '''Remove an Entire Rectangle from bw figure'''
+        plt.ioff()
+        fig = plt.figure()
+        if rm==0: plt.title('Select rectangle you want to remove')
+        elif rm==1: plt.title('Select rectangle you want to add')
+        cm = plt.pcolormesh( self.bw, vmin=0, vmax=1 )
+        plt.axis('equal')
+        x_press = None
+        y_press = None
+        def onpress(event):
+            global x_press, y_press
+            x_press = int(event.xdata) if (event.xdata != None) else None
+            y_press = int(event.ydata) if (event.ydata != None) else None
+        def onrelease(event):
+            global x_press, y_press
+            x_release = int(event.xdata) if (event.xdata != None) else None
+            y_release = int(event.ydata) if (event.ydata != None) else None
+            if (x_press != None and y_press != None
+                and x_release != None and y_release != None):
+                (xs, xe) = (x_press, x_release+1) if (x_press <= x_release) \
+                  else (x_release, x_press+1)
+                (ys, ye) = (y_press, y_release+1) if (y_press <= y_release) \
+                  else (y_release, y_press+1)
+                print( "Slice [{0}:{1},{2}:{3}] will be set to {4}".format(
+                    xs, xe, ys, ye, rm) )
+                self.bw[ys:ye, xs:xe] = rm
+                cm.set_array( self.bw.ravel() )
+                event.canvas.draw()
+            x_press = None
+            y_press = None
+        cid_press   = fig.canvas.mpl_connect('button_press_event'  , onpress  )
+        cid_release = fig.canvas.mpl_connect('button_release_event', onrelease)
+        plt.show()
+
+    def AddPoints( self ):
+        '''Add Points by selection'''
+        return self.RemovePoints( rm=1 )
+
+    def AddRectangle( self ):
+        '''Remove an Entire Rectangle from bw figure'''
+        return self.RemoveRectangle( rm=1 )
+
+class MaskedShow( object ):
+
+    def __init__( self, data ):
+        self.data = data
+
+    def get_mask(self, mask):
+        self.mask = mask
+
+    def show_masked( self ):
+        plt.figure()
+        m = plt.imshow( np.ma.masked_where( self.mask, self.data ), cmap=plt.cm.spectral )
+        n = plt.imshow( np.ma.masked_where( 1-self.mask, self.data ), cmap=plt.cm.gray )
+        plt.colorbar( m )
+        plt.show()
+                    
+# Functions
+# =========
+
+def LoadLandsatData( dirname ):
+    '''Load Relevant Bands for the Current Landsat Data'''
+    if os.path.split(dirname)[-1].startswith('LC8'):
+        MIR = gdal.Open( os.path.join(dirname, '%s_B6.TIF' % os.path.split(dirname)[-1]) )
+        NIR = gdal.Open( os.path.join(dirname, '%s_B5.TIF' % os.path.split(dirname)[-1]) )
+        R  = gdal.Open( os.path.join(dirname, '%s_B4.TIF' % os.path.split(dirname)[-1]) )
+        G  = gdal.Open( os.path.join(dirname, '%s_B3.TIF' % os.path.split(dirname)[-1]) )
+        B  = gdal.Open( os.path.join(dirname, '%s_B2.TIF' % os.path.split(dirname)[-1]) )
+    # Landsat 7 (TM), 4-5 (TM) and 1-5 (MSS)
+    else:
+        MIR = gdal.Open( os.path.join(dirname, '%s_B5.TIF' % os.path.split(dirname)[-1]) )
+        NIR = gdal.Open( os.path.join(dirname, '%s_B4.TIF' % os.path.split(dirname)[-1]) )
+        R  = gdal.Open( os.path.join(dirname, '%s_B3.TIF' % os.path.split(dirname)[-1]) )
+        G  = gdal.Open( os.path.join(dirname, '%s_B2.TIF' % os.path.split(dirname)[-1]) )
+        B  = gdal.Open( os.path.join(dirname, '%s_B1.TIF' % os.path.split(dirname)[-1]) )
+    # Get Georeference Data
+    GeoTransf = {    
+        'PixelSize' : abs( R.GetGeoTransform()[1] ),
+        'X'  : R.GetGeoTransform()[0],
+        'Y'  : R.GetGeoTransform()[3]
+        }
+
+    return R.ReadAsArray(), G.ReadAsArray(), B.ReadAsArray(), \
+        NIR.ReadAsArray(), MIR.ReadAsArray(), GeoTransf
+
+def SegmentationIndex( *args, **kwargs ):
+    '''Apply Index'''
+    R = kwargs.pop( 'R', np.nan ).astype( float )
+    G = kwargs.pop( 'G', np.nan ).astype( float )
+    B = kwargs.pop( 'B', np.nan ).astype( float )
+    NIR = kwargs.pop( 'NIR', np.nan ).astype( float )
+    MIR = kwargs.pop( 'MIR', np.nan ).astype( float )
+    index = kwargs.pop( 'index', None )
+    rad = kwargs.pop( 'radius', 20 )
+
+    if index == 'NDVI':
+        IDX =  (NIR - R) / (NIR + R)
+    elif index == 'MNDWI':
+        IDX =  (G - MIR) / (G + MIR)
+    elif index == 'LGR':
+        IDX =  np.log( G / R )
+    elif index == 'LGB':
+        IDX =  np.log( G / B )
+    
+    # Apply Local Otsu's Method
+    print "   Local Otsu's Method - This may require some time..."
+    selem = mm.disk( rad )
+    thresh = rank.otsu( img_as_ubyte(IDX), selem )
+    globthresh = threshold_otsu( IDX[np.isfinite(IDX)] )
+    print '   ...done'
+    if index == 'NDVI': MASK = img_as_ubyte(IDX) <= thresh
+    else: MASK = img_as_ubyte(IDX) >= thresh
+
+    return IDX, BW( MASK ), globthresh
+
+def ShowRasterData( data, label='', title='' ):
+    '''Return a GridSpec Instance with Raster imshow,
+    colorbar and histogram of its values'''
+
+    # Set figure and axes
+    w, h = plt.figaspect(0.5)
+    fig = plt.figure( figsize=(w,h) )
+    gs = GridSpec(100,100,bottom=0.18,left=0.08,right=0.98)
+    ax1 = fig.add_subplot( gs[:,:50] ) # Left
+    ax2 = fig.add_subplot( gs[:10,55:] ) # Upper Right
+    ax3 = fig.add_subplot( gs[40:,55:] ) # Lower Right    
+    # Plot Data
+    cs = ax1.imshow( data )
+    if title != '': ax1.set_title( r'%s' % title )
+    fig.colorbar(cs, label=(r'%s values' % label).strip(), ax=ax1, cax=ax2, orientation='horizontal')
+    # Values Histogram
+    x = np.linspace(np.nanmin(data[np.isfinite(data)]), np.nanmax(data[np.isfinite(data)]), 1000)
+    hist, bins = np.histogram( data.flatten(), bins=x, normed=True )
+    bins = 0.5*(bins[1:]+bins[:-1])
+    y = np.linspace(0, 2*hist.max(), x.size)
+    x[0], x[-1] = x[1], x[-2] # Apply a Manual Fix
+    X, Y = np.meshgrid( x, y )
+    Z = X
+    ax3.pcolor( X, Y, Z )
+    ax3.fill_between( bins, y.max(),
+                      hist, color='w' )
+    ax3.set_xlim([x.min(), x.max()])
+    ax3.set_ylim([0, 1.2*hist.max()])
+    ax3.set_xlabel( (r'%s values' % label).strip() )
+    ax3.set_ylabel( r'frequency' )
+    return fig
+    
+
+def BoundImage( R, G, B, NIR, MIR, borders ):
+    '''Remove Borders from Image'''
+    return R[borders['up']:-borders['down'], borders['right']:-borders['left']], \
+        G[borders['up']:-borders['down'], borders['right']:-borders['left']], \
+        B[borders['up']:-borders['down'], borders['right']:-borders['left']], \
+        MIR[borders['up']:-borders['down'], borders['right']:-borders['left']], \
+        NIR[borders['up']:-borders['down'], borders['right']:-borders['left']]
+
+
+def imshow(img, cb=False, show=True):
+    plt.figure()
+    plt.imshow(img, cmap=plt.cm.spectral)
+    if cb: plt.colorbar()
+    if show: plt.show()
+
+def isRaster( img ):
+    if isinstance( img, np.ndarray ) :
+        if img.ndim == 2:
+            return True
+    return False
+
+def isRGB( img ):
+    if isinstance( img, np.ndarray ) :
+        if img.ndim == 3 and img.shape[2] == 3:
+            return True
+    return False
+
+def isBW( img ):
+    if isRaster( img ) and np.allclose( [0.,1.], np.unique( img ) ):
+        return True
+    return False
+        
+
+def Thresholding( rgb, band=None ):
+    '''Thresholding(rgb) - Apply Otsu's Thresholding Method'''
+    # Check rgb image
+    if not isRGB( rgb ):
+        raise TypeError, \
+          'Input must be an RGB image'
+    # Assign band
+    if band is None: idx = 0 # Defaut band is R
+    elif isinstance(band, str):
+        if band.lower()[0] == 'r': idx = 0
+        elif band.lower()[0] == 'g': idx = 1
+        elif band.lower()[0] == 'b': idx = 2
+    # Apply Threshold to selected Band
+    img = rgb[:,:,idx] # Band Index
+    thresh = threshold_otsu( img ) # Compute Otsu's Threshold
+    bw = img < thresh # Apply Threshold
+    return BW( bw )
+
+
+def CleanIslands( bw, size, conn=1 ):
+    '''CleanIslands( bw, size, conn=1 ) - Remove Islands inside channel'''
+    if not isBW( bw ):
+        raise TypeError, \
+          'Input must be a Black&White image'
+    return BW( mm.remove_small_objects( bw==False, size, conn ) == False )
+
+
+def RemoveSmallObjects( bw, size, conn=1 ):
+    '''RemoveSmallObjects( bw, size, conn=1 )'''
+    return BW( bw * mm.remove_small_objects(
+        bw.astype(bool), size, conn ).astype(np.uint8) )
+
+    
+def Skeletonize( bw ):
+    '''Combine Skeletonization with Isles Removal.'''
+    if not isBW( bw ):
+        raise TypeError, \
+            'Input must be a Black&White image'
+    skel, dist = mm.medial_axis( bw, return_distance=True )
+    skeldist = skel*dist
+    return skel, dist, skeldist
+
+
+def Pruning( raster, NMAX=100, fix_skel=True, smooth=True, verbose=True ):
+    
+    '''
+    Pruning( raster, maxiter=100 ) - Remove Spurs from skeletonized image.
+    NMAX = maximum number of pruning iterations.
+    Convenience Function for Class Pruner.
+    '''
+    
+    if not isRaster( raster ):
+        raise TypeError, \
+          '''Input must be a raster image'''
+    img = raster.astype( np.uint8 )
+    pruner = Pruner( img )
+    return pruner( NMAX, verbose, fix_skel, smooth )
