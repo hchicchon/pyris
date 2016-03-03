@@ -29,8 +29,6 @@ import warnings
 # --------------------------------------------------------------
 # Name of the Input Directory ( path: ./inputs/RIVER/<landsat_directories> )
 
-UNPIXEL = 5 # Use Less Information (Images are Huge!!!)
-
 try: RIVER=sys.argv[1]
 except IndexError: RIVER = 'beni'
 # Run Interactively only if you want to manually select object labels (recommended)
@@ -41,7 +39,7 @@ RUN_INTERACTIVE = False#True
 SEGMENTATION_METHOD = 'NDVI'
 # In order to store river properties streamwise, define where the water is coming from
 # ( b:bottom, t:top, l:left, r:right)
-FLOW_FROM = 't'
+FLOW_FROM = 'b'
 # In order to remove tributaries and useless branches from the image mask,
 # enter a scale for the average channel width (in meters)
 RIVER_WIDTH = 300
