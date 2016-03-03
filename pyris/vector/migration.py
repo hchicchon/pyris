@@ -500,7 +500,7 @@ class MigRateBend( object ):
         return FullDict
 
     def __call__( self, filter_reduction=1, return_on_cutoff=True, bud_harm=1 ):
-        self.FilterAll( reduction=0.5 )
+        self.FilterAll( reduction=filter_reduction )
         self.GetAllInflections()
         self.CorrelateInflections()
         self.LabelAllBends()

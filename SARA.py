@@ -17,6 +17,7 @@ import os, sys, shutil
 import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt
+from skimage import morphology as mm
 import pickle
 import xlrd
 from pyris import *
@@ -30,19 +31,21 @@ import warnings
 # Name of the Input Directory ( path: ./inputs/RIVER/<landsat_directories> )
 
 try: RIVER=sys.argv[1]
-except IndexError: RIVER = 'beni'
+except IndexError: RIVER = 'ucayali'
 # Run Interactively only if you want to manually select object labels (recommended)
 RUN_INTERACTIVE = True
 # Index used to isolate the river channel from the surrounding planform
 # ( can be either LGR (log(Green/Red)), LGB (log(Green/Blue)),
 #   NDVI (normalized difference veg, index), MNDWI (water index) )
 SEGMENTATION_METHOD = 'NDVI'
+# Thresholding method for Otsu's Threshold ('global' or 'local')
+THRESH_METHOD = 'local'#global'
 # In order to store river properties streamwise, define where the water is coming from
 # ( b:bottom, t:top, l:left, r:right)
 FLOW_FROM = 'b'
 # In order to remove tributaries and useless branches from the image mask,
 # enter a scale for the average channel width (in meters)
-RIVER_WIDTH = 800
+RIVER_WIDTH = 500
 # Skeletonization leaves some spurs on the planform. Pruning algorithm helps to get rid
 # of them, but it is very expensive. If a length based approach is used to reconstruct the planform shape
 # (RECONSTRUCTION_METHOD='length'), pruning may be skipped (PRUNE=False) or PRUNE_ITER can be kept very small.
@@ -145,7 +148,7 @@ for landsat in landsat_dirs:
     print '   Performing Segmentation'
     pixel_width = RIVER_WIDTH/GeoTransf['PixelSize']
     radius = 10 * pixel_width
-    IDX, mask, globthresh = SegmentationIndex( R=R, G=G, B=B, NIR=NIR, MIR=MIR, index=SM, rad=radius )
+    IDX, mask, globthresh = SegmentationIndex( R=R, G=G, B=B, NIR=NIR, MIR=MIR, index=SM, rad=radius, method=THRESH_METHOD )
     ## ShowRasterData( IDX, label='', title='Choose a threshold' ).show()
 
     # Create Clean Channel Mask
@@ -262,9 +265,9 @@ for ilab, lab_file in enumerate(lab_files):
     # Mask Processing
     # ---------------
     pixel_width = RIVER_WIDTH/GeoTransf['PixelSize']
-    mask = CleanIslands( mask.bw, 10*pixel_width**2 ) # Clean Holes Inside the Planform
+    mask = CleanIslands( mask.bw, 2*pixel_width**2 ) # Clean Holes Inside the Planform
     print '   Internal Spots cleaned...'
-    mask = RemoveSmallObjects( mask.bw, 10*pixel_width**2 ) # Remove External Noise
+    mask = RemoveSmallObjects( mask.bw, 2*pixel_width**2 ) # Remove External Noise
     print '   Small objects removed...'
     skel, dist, skeldist = Skeletonize( mask.bw ) # Compute Axis and Distance
     print '   Skeletonization done...'

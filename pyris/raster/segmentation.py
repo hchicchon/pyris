@@ -2,6 +2,7 @@ from __future__ import division
 from ..misc import isRGB, BW
 import numpy as np
 from skimage.filter import threshold_otsu, rank
+from skimage import morphology as mm
 from skimage.util import img_as_ubyte
 import warnings
 
@@ -27,12 +28,12 @@ def Thresholding( rgb, band=None ):
 
 def SegmentationIndex( *args, **kwargs ):
     '''Apply Index'''
-    R = kwargs.pop( 'R', np.nan ).astype( float )
-    G = kwargs.pop( 'G', np.nan ).astype( float )
-    B = kwargs.pop( 'B', np.nan ).astype( float )
-    NIR = kwargs.pop( 'NIR', np.nan ).astype( float )
-    MIR = kwargs.pop( 'MIR', np.nan ).astype( float )
-    Bawei = kwargs.pop( 'Bawei', np.nan ).astype( float )
+    R = kwargs['R'].astype( float )
+    G = kwargs['G'].astype( float )
+    B = kwargs['B'].astype( float )
+    NIR = kwargs.pop( 'NIR', np.full(R.shape,np.nan) ).astype( float )
+    MIR = kwargs.pop( 'MIR', np.full(R.shape,np.nan) ).astype( float )
+    Bawei = kwargs.pop( 'Bawei', np.full(R.shape,np.nan) ).astype( float )
     index = kwargs.pop( 'index', None )
     rad = kwargs.pop( 'radius', 20 )
     method = kwargs.pop( 'method', 'local' )

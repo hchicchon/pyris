@@ -179,13 +179,13 @@ def LoadLandsatData( dirname ):
         G     = gdal.Open( os.path.join(dirname, '%s_B2.TIF' % os.path.split(dirname)[-1]) )
         B     = gdal.Open( os.path.join(dirname, '%s_B1.TIF' % os.path.split(dirname)[-1]) )
     # Get Georeference Data
-    bands = [ R.ReadAsArray(), G.ReadAsArray(), B.ReadAsArray(), NIR.ReadAsArray(), MIR.ReadAsArray() ]
+    bands = [ R.ReadAsArray(), G.ReadAsArray(), B.ReadAsArray(), NIR.ReadAsArray(), MIR.ReadAsArray(), Bawei.ReadAsArray() ]
     GeoTransf = {    
         'PixelSize' : abs( R.GetGeoTransform()[1] ),
         'X' : R.GetGeoTransform()[0],
         'Y' : R.GetGeoTransform()[3],
-        'Lx' : mask.bw.shape[0], # TODO : VERIIFICARE (se sbagliato c'e' da scommentare l'overraid in SARA)
-        'Ly' : mask.bw.shape[1] # TODO : VERIIFICARE (se sbagliato c'e' da scommentare l'overraid in SARA)
+        'Lx' : bands[0].shape[0], # TODO : VERIIFICARE (se sbagliato c'e' da scommentare l'overraid in SARA)
+        'Ly' : bands[0].shape[1] # TODO : VERIIFICARE (se sbagliato c'e' da scommentare l'overraid in SARA)
         }
     return bands, GeoTransf
 
