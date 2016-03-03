@@ -29,22 +29,20 @@ import warnings
 # --------------------------------------------------------------
 # Name of the Input Directory ( path: ./inputs/RIVER/<landsat_directories> )
 
-UNPIXEL = 5 # Use Less Information (Images are Huge!!!)
-
 try: RIVER=sys.argv[1]
 except IndexError: RIVER = 'beni'
 # Run Interactively only if you want to manually select object labels (recommended)
-RUN_INTERACTIVE = False#True
+RUN_INTERACTIVE = True
 # Index used to isolate the river channel from the surrounding planform
 # ( can be either LGR (log(Green/Red)), LGB (log(Green/Blue)),
 #   NDVI (normalized difference veg, index), MNDWI (water index) )
 SEGMENTATION_METHOD = 'NDVI'
 # In order to store river properties streamwise, define where the water is coming from
 # ( b:bottom, t:top, l:left, r:right)
-FLOW_FROM = 't'
+FLOW_FROM = 'b'
 # In order to remove tributaries and useless branches from the image mask,
 # enter a scale for the average channel width (in meters)
-RIVER_WIDTH = 300
+RIVER_WIDTH = 800
 # Skeletonization leaves some spurs on the planform. Pruning algorithm helps to get rid
 # of them, but it is very expensive. If a length based approach is used to reconstruct the planform shape
 # (RECONSTRUCTION_METHOD='length'), pruning may be skipped (PRUNE=False) or PRUNE_ITER can be kept very small.
