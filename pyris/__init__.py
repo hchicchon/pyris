@@ -38,7 +38,7 @@ __all__ = [
     # vector
     'AxisReader', 'ReadAxisLine',
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
-    'MigRateBend'
+    'MigRateBend', 'LoadLandsatData'
     ]
 
 # Check if correct version of MLPY is installed
