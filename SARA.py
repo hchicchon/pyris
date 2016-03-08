@@ -153,7 +153,7 @@ for landsat in landsat_dirs:
     print '   Processing Mask'
     mask = RemoveSmallObjects( mask.bw, 100*pixel_width**2 ) # One Hundred Widths of Channel at Least is Required
     print '   Small Objs Removed'
-    radius = np.max( np.floor( 0.5 * ( pixel_width ) ) - 3, 0 )
+    radius = max( np.floor( 0.5 * ( pixel_width ) ) - 3, 0 )
     selem = mm.disk( radius )
     mask = BW( mm.binary_opening( mask.bw, selem ) )
     print '   Binary Opening Done'
