@@ -39,20 +39,20 @@ RUN_INTERACTIVE = True
 #   NDVI (normalized difference veg, index), MNDWI (water index) )
 SEGMENTATION_METHOD = 'NDVI'
 # Thresholding method for Otsu's Threshold ('global' or 'local')
-THRESH_METHOD = 'local'#global'
+THRESH_METHOD = 'global'
 # In order to store river properties streamwise, define where the water is coming from
 # ( b:bottom, t:top, l:left, r:right)
 FLOW_FROM = 'b'
 # In order to remove tributaries and useless branches from the image mask,
 # enter a scale for the average channel width (in meters)
-RIVER_WIDTH = 500
+RIVER_WIDTH = 350
 # Skeletonization leaves some spurs on the planform. Pruning algorithm helps to get rid
 # of them, but it is very expensive. If a length based approach is used to reconstruct the planform shape
 # (RECONSTRUCTION_METHOD='length'), pruning may be skipped (PRUNE=False) or PRUNE_ITER can be kept very small.
 # If RECONSTRUCTION_METHOD='width', a high limit of iterations is required (i.e., PRUNE_ITER=250).
 # Be aware that, on complex planforms, PRUNE_ITER>500 could result in many hours of iteration.
 PRUNE = True # Use pruning after skeletonization (require if width is used as axis bifurcation selector)
-PRUNE_ITER = 25 # Maximum Number of Iterations in Spurs Removal Algorithm
+PRUNE_ITER = 50 # Maximum Number of Iterations in Spurs Removal Algorithm
 # During channel axis vectorization, external branches, bifurcations andconflunces can be found.
 # In order to choose one of them automatically, select width- or length-based approach by setting
 # RECONSTRUCTION_METHOD either to 'width', 'length' or 'std'.
@@ -114,7 +114,8 @@ print 'CREATING MASK'
 print
 
 # Input Landsat Data Directories
-landsat_dirs = sorted([os.path.join(idir, f) for f in os.listdir(idir)])
+
+landsat_dirs = sorted( [ os.path.join( idir, f ) for f in os.listdir( idir ) if os.path.isdir( os.path.join( idir, f ) ) ] )
 
 for landsat in landsat_dirs:
 
@@ -166,7 +167,7 @@ for landsat in landsat_dirs:
     # Manage Landsat NaNs
     # -------------------
     print '   Removing NoData Values'
-    nanmask = mm.binary_dilation( np.where( R==0,1,0 ), mm.disk(5) ) # NaNs Mask
+    nanmask = mm.binary_dilation( np.where( R==0,1,0 ), mm.disk(30) ) # NaNs Mask
     print '   NoData Dilated'
     mask = BW( np.where( nanmask==1, np.nan, mask.bw ) ) # Remove NaNs from Indexed Mask
     print '   NaNs added where NoData'
@@ -254,6 +255,7 @@ for ilab, lab_file in enumerate(lab_files):
     name = os.path.splitext(os.path.split(lab_file)[-1])[0]
     ofile = os.path.join( skeldir, '.'.join((name, 'npy')) )
     geofile = os.path.join( geodir, '.'.join((name,'p')) )
+    with open( geofile ) as gf: GeoTransf = pickle.load( gf )
 
     if os.path.isfile(ofile):
         print 'SKELETON FOUND FOR %s - SKIPPING' % name
