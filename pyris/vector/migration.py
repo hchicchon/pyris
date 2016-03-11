@@ -116,7 +116,7 @@ class MigRateBend( object ):
         '''Find the Closest Inflection Points'''
 
         self.CI1 = [] # Points on the Current Planform
-        self.CI12 = [] # Points of which the First Planform Points Converge to the Second Planform
+        self.CI12 = [] # Points to which the First Planform Points Converge to the Second Planform
         self.CI11 = [] # Points where the second planform converges into itself to get in the next one (some bends become one bend)
         C1 = self.I[0] # Initial Reference Planform
         # Go Forward
@@ -140,11 +140,15 @@ class MigRateBend( object ):
             duplic = unique[ counts>1 ]
             cduplic = counts[ counts > 1 ]
             for idup, (dup, cdup) in enumerate( zip( duplic, cduplic ) ):
-                idxs = np.where(C12==dup)[0]
+                idxs = np.where( C12==dup )[0]
                 idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) )
                 idxs = np.delete( idxs, idx )
                 C1 = np.delete( C1, idxs )
                 C12 = np.delete( C12, idxs )
+
+            # Sometimes inflections are messed up. Invert them
+            C1.sort()
+            C12.sort()
 
             # Plot for Cutoff-to-NewBend Inflection Correlation
             #plt.figure()
@@ -166,7 +170,7 @@ class MigRateBend( object ):
         '''Bend Upstream-Downstream Indexes'''
         BUD = np.full( d[0].size, np.nan )
         for i, (il,ir) in self.Iterbends( I ):
-            iapex = il + icwtC[ il:ir ].argmax()
+            iapex = il + np.abs( icwtC[ il:ir ] ).argmax()
             BUD[ il ] = 2 # Inflection Point
             BUD[ ir+1 ] = 2 # Inflection Point
             BUD[ iapex ] = 0 # Bend Apex
@@ -182,7 +186,6 @@ class MigRateBend( object ):
         for i, d in self.IterData():
             self.BUD.append( self.BendUpstreamDownstream( d, self.CI1[i], icwtC[i] ) )
         return None
-
 
     def PlotRealFiltered( self, *args, **kwargs ):
         '''Plot the original planform and the Wavelet-Reconstructed one'''

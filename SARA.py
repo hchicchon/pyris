@@ -109,7 +109,7 @@ print '=' * len(title)
 print
 print 'CREATING MASK'
 print
-x
+
 # Input Landsat Data Directories
 landsat_dirs = sorted([os.path.join(idir, f) for f in os.listdir(idir)])
 
