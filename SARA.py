@@ -32,7 +32,7 @@ import warnings
 try: RIVER=sys.argv[1]
 except IndexError: RIVER = 'beni'
 # Run Interactively only if you want to manually select object labels (recommended)
-RUN_INTERACTIVE = False#True
+RUN_INTERACTIVE = True
 # Index used to isolate the river channel from the surrounding planform
 # ( can be either LGR (log(Green/Red)), LGB (log(Green/Blue)),
 #   NDVI (normalized difference veg, index), MNDWI (water index) )
@@ -115,6 +115,8 @@ landsat_dirs = sorted([os.path.join(idir, f) for f in os.listdir(idir)])
 
 for landsat in landsat_dirs:
 
+    continue
+
     # File Names
     # ----------
     landsatname = os.path.split(landsat)[-1]
@@ -187,6 +189,9 @@ print
 mask_files = sorted([os.path.join(maskdir, f) for f in os.listdir(maskdir)])
 for mask_file in mask_files:
 
+    continue
+
+
     # Landsat Files Name and Data
     # ---------------------------
     name = os.path.splitext(os.path.split( mask_file )[-1])[0]
@@ -246,6 +251,9 @@ print
 lab_files = sorted([os.path.join(labdir, f) for f in os.listdir(labdir)])
 for ilab, lab_file in enumerate(lab_files):
 
+    continue
+
+
     # Landsat Files Name and Data
     # ---------------------------
     name = os.path.splitext(os.path.split(lab_file)[-1])[0]
@@ -278,6 +286,9 @@ print
 
 skel_files = sorted([os.path.join(skeldir, f) for f in os.listdir(skeldir)])
 for skel_file in skel_files:
+
+    continue
+
 
     if not PRUNE:
         print 'Spurs will not be removed (set PRUNE to True in order to apply spurs removal to skeleton.)'
@@ -336,6 +347,9 @@ if PRUNE: prune_files = sorted([os.path.join(prundir, f) for f in os.listdir(pru
 else: prune_files = skel_files
 
 for prune_file in prune_files:
+
+    continue
+
 
     # Landsat Files Name and Data
     # ---------------------------
@@ -507,5 +521,30 @@ if RUN_INTERACTIVE:
             plt.arrow( X[j], Y[j], DZ[j]*np.cos(A[j]), DZ[j]*np.sin(A[j]), fc='k', ec='k' )
         B = ( B12[ bend ][ 0 ] )
     plt.legend( ncol=4 )
+    plt.axis('equal')
+    plt.show()
+
+
+if RUN_INTERACTIVE:
+    colors = [ plt.cm.Set1(x) for x in np.linspace(0, 1, len(data)) ]
+    lws = np.linspace( 0.5, 5, len(data) )
+    plt.figure()
+    for i, d in enumerate( data ):
+        xi, yi, si = d[0], d[1], d[2]
+        BI = D['B1'][i]
+        B12 = D['B12'][i]
+        dx = D['dx'][i]
+        dy = D['dy'][i]
+        dz = D['dz'][i]
+        X = xi
+        Y = yi
+        S = si
+        DX = dx
+        DY = dy
+        DZ = dz
+        A = np.arctan2( DY,DX )
+        plt.plot( X[::4], Y[::4], lw=lws[i], color=colors[i] )
+        for j in xrange(0,X.size,4):
+            plt.arrow( X[j], Y[j], DZ[j]*np.cos(A[j]), DZ[j]*np.sin(A[j]), fc='k', ec='k' )
     plt.axis('equal')
     plt.show()
