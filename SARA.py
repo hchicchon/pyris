@@ -478,6 +478,7 @@ if RUN_INTERACTIVE:
     plt.figure()
     for iB, B in enumerate( BENDS ):
         for i, d in enumerate( data ):
+            if B == -1: continue
             xi, yi, si = d[0], d[1], d[2]
             BI = D['B1'][i]
             B12 = D['B12'][i]
@@ -495,10 +496,12 @@ if RUN_INTERACTIVE:
     plt.show()
 
 if RUN_INTERACTIVE:
-    B = int( np.unique( D['B1'][0][D['B1'][0]>0] ).max() / 2 ) # Plot a BEND in the middle
+    B= 10#int( np.unique( D['B1'][0][D['B1'][0]>0] ).max() / 2 ) # Plot a BEND in the middle
+    print 'Showing Bend %d' % B
     lws = np.linspace( 0.5, 5, len(data) )
     plt.figure()
     for i, d in enumerate( data ):
+        if B == -1: break
         xi, yi, si = d[0], d[1], d[2]
         BI = D['B1'][i]
         B12 = D['B12'][i]
