@@ -6,7 +6,7 @@
 # Date: November, 2015
 # Description: Read Landsat Bands and Extracts River Features
 #
-# Branch: PRUT
+# Branch: BENI
 #
 # UniTN, QMUL 
 #
@@ -32,7 +32,7 @@ import warnings
 try: RIVER=sys.argv[1]
 except IndexError: RIVER = 'beni'
 # Run Interactively only if you want to manually select object labels (recommended)
-RUN_INTERACTIVE = True
+RUN_INTERACTIVE = False# True
 # Index used to isolate the river channel from the surrounding planform
 # ( can be either LGR (log(Green/Red)), LGB (log(Green/Blue)),
 #   NDVI (normalized difference veg, index), MNDWI (water index) )
@@ -55,6 +55,12 @@ PRUNE_ITER = 25 # Maximum Number of Iterations in Spurs Removal Algorithm
 # RECONSTRUCTION_METHOD either to 'width', 'length' or 'std'.
 # Standard 'std' method uses width if the width of the branches is similar, length otherwise
 RECONSTRUCTION_METHOD = 'std'
+# A Multiplier for the Inverse Wavelet Transfor Threshold
+# 1: No Reduction; 0.5: Half-wavelength of the First Harmonie (Recommended); 0.33: One Third
+# of the Wavelength of the First Harmonic (eventually recommended, when the third harmonic is
+# particularly relevant)
+BEND_SEPARATION_FILTER_REDUCTION = 0.33
+
 # --------------------------------------------------------------
 
 # Directories
@@ -454,7 +460,7 @@ for i_file, axis_file in enumerate( axis_files ):
 
 # Compute Migration Rates
 # -----------------------
-D = MigRateBend( data, T=times )(  )
+D = MigRateBend( data, T=times )( filter_reduction=BEND_SEPARATION_FILTER_REDUCTION )
 
 # Append Data to the Axis File and Dump It
 # ----------------------------------------
