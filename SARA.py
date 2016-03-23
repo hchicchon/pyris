@@ -32,7 +32,7 @@ import warnings
 try: RIVER=sys.argv[1]
 except IndexError: RIVER = 'beni'
 # Run Interactively only if you want to manually select object labels (recommended)
-RUN_INTERACTIVE = False# True
+RUN_INTERACTIVE = True
 # Index used to isolate the river channel from the surrounding planform
 # ( can be either LGR (log(Green/Red)), LGB (log(Green/Blue)),
 #   NDVI (normalized difference veg, index), MNDWI (water index) )
@@ -502,7 +502,7 @@ if RUN_INTERACTIVE:
     plt.show()
 
 if RUN_INTERACTIVE:
-    B= 10#int( np.unique( D['B1'][0][D['B1'][0]>0] ).max() / 2 ) # Plot a BEND in the middle
+    B= 17#int( np.unique( D['B1'][0][D['B1'][0]>0] ).max() / 2 ) # Plot a BEND in the middle
     print 'Showing Bend %d' % B
     lws = np.linspace( 0.5, 5, len(data) )
     plt.figure()
