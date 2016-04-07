@@ -464,7 +464,7 @@ D = MigRateBend( data, T=times )( filter_reduction=BEND_SEPARATION_FILTER_REDUCT
 
 # Append Data to the Axis File and Dump It
 # ----------------------------------------
-for i, pruname in enumerate( prune_files ):
+for i, pruname in enumerate( axis_files ):
     pname = os.path.splitext(os.path.split(pruname)[-1])[0]
     ofile = os.path.join( axisdir, '.'.join(( pname, 'npy' )) )
     stuff_to_append = [
