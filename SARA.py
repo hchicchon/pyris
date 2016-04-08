@@ -535,7 +535,7 @@ if RUN_INTERACTIVE:
 
 
 if RUN_INTERACTIVE:
-    colors = [ plt.cm.Set1(x) for x in np.linspace(0, 1, len(data)) ]
+    colors = [ plt.cm.jet(x) for x in np.linspace(0, 1, len(data)) ]
     lws = np.linspace( 0.5, 5, len(data) )
     plt.figure()
     for i, d in enumerate( data ):
@@ -545,15 +545,22 @@ if RUN_INTERACTIVE:
         dx = D['dx'][i]
         dy = D['dy'][i]
         dz = D['dz'][i]
-        X = xi
-        Y = yi
-        S = si
-        DX = dx
-        DY = dy
-        DZ = dz
+        X = xi / 1000
+        Y = yi / 1000
+        S = si / 1000
+        DX = dx / 1000
+        DY = dy / 1000
+        DZ = dz / 1000
         A = np.arctan2( DY,DX )
         plt.plot( X[::4], Y[::4], lw=lws[i], color=colors[i] )
         for j in xrange(0,X.size,4):
             plt.arrow( X[j], Y[j], DZ[j]*np.cos(A[j]), DZ[j]*np.sin(A[j]), fc='k', ec='k' )
+    plt.gca().get_xaxis().get_major_formatter().set_scientific( False )
+    plt.gca().get_yaxis().get_major_formatter().set_scientific( False )
+    plt.gca().get_xaxis().get_major_formatter().set_useOffset( False )
+    plt.gca().get_yaxis().get_major_formatter().set_useOffset( False )
+    plt.xlabel( r'$x_{\mathrm{UTM}} [\mathrm{km}]$', fontsize=30 )
+    plt.ylabel( r'$y_{\mathrm{UTM}} [\mathrm{km}]$', fontsize=30 )
     plt.axis('equal')
+    plt.tight_layout()
     plt.show()
