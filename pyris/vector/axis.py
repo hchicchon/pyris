@@ -206,10 +206,10 @@ class AxisReader( object ):
                             jmax = jncsl.argmax()
                             if jncsl[jmin]<0.75*jncsl[jmax]:
                                 # If a branch is much shorter than another one, forget about it
-                                np.delete( jncsl, jmin )
-                                np.delete( jncsw, jmin )
-                                np.delete( axijs, jmin )
-                                np.delete( rdepths, jmin )
+                                jncsl = np.delete( jncsl, jmin )
+                                jncsw = np.delete( jncsw, jmin )
+                                axijs = np.delete( axijs, jmin )
+                                rdepths = np.delete( rdepths, jmin )
                         # Take the Widest between the remaining branches
                         _J, _I, _ = axijs[ jncsw.argmax() ] # Widest Branch
                         self.call_depth = rdepths[ jncsw.argmax() ]

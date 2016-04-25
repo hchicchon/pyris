@@ -45,7 +45,7 @@ THRESH_METHOD = 'global'
 FLOW_FROM = 'b'
 # In order to remove tributaries and useless branches from the image mask,
 # enter a scale for the average channel width (in meters)
-RIVER_WIDTH = 350
+RIVER_WIDTH = 300
 # Skeletonization leaves some spurs on the planform. Pruning algorithm helps to get rid
 # of them, but it is very expensive. If a length based approach is used to reconstruct the planform shape
 # (RECONSTRUCTION_METHOD='length'), pruning may be skipped (PRUNE=False) or PRUNE_ITER can be kept very small.
