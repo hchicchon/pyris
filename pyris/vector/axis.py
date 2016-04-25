@@ -190,7 +190,7 @@ class AxisReader( object ):
                         for ij in xrange( len(pos)-1 ):
                             # Remove Narrower Branches from the Hit&Miss Matrix
                             self.hits[ axijs[jncsw.argmin()][1][0], axijs[jncsw.argmin()][0][0] ] = 0 # Delete Averagely Narrowest Path
-                            np.delete( jncsw, jncsw.argmin() )
+                            jncsw = np.delete( jncsw, jncsw.argmin() )
 
                     elif self.method == 'length':
                         # Recursively Append the Following Reach
