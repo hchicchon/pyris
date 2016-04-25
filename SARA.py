@@ -18,7 +18,6 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 import pickle
-import xlrd
 from pyris import *
 import warnings
 
