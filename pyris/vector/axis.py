@@ -49,7 +49,6 @@ class AxisReader( object ):
         self.strides = stride_tricks.as_strided( self.BI, (i,j,n,n),
                                                  strides=2*self.BI.strides )
 
-
     def GetFirstPoint( self ):
 
         ## TODO :: fix inflow direction
@@ -190,7 +189,7 @@ class AxisReader( object ):
                         for ij in xrange( len(pos)-1 ):
                             # Remove Narrower Branches from the Hit&Miss Matrix
                             self.hits[ axijs[jncsw.argmin()][1][0], axijs[jncsw.argmin()][0][0] ] = 0 # Delete Averagely Narrowest Path
-                            np.delete( jncsw, jncsw.argmin() )
+                            jncsw = np.delete( jncsw, jncsw.argmin() )
 
                     elif self.method == 'length':
                         # Recursively Append the Following Reach
@@ -206,10 +205,10 @@ class AxisReader( object ):
                             jmax = jncsl.argmax()
                             if jncsl[jmin]<0.75*jncsl[jmax]:
                                 # If a branch is much shorter than another one, forget about it
-                                np.delete( jncsl, jmin )
-                                np.delete( jncsw, jmin )
-                                np.delete( axijs, jmin )
-                                np.delete( rdepths, jmin )
+                                del axijs[ jmin ] # This is a list
+                                jncsl = np.delete( jncsl, jmin )
+                                jncsw = np.delete( jncsw, jmin )
+                                rdepths = np.delete( rdepths, jmin )
                         # Take the Widest between the remaining branches
                         _J, _I, _ = axijs[ jncsw.argmax() ] # Widest Branch
                         self.call_depth = rdepths[ jncsw.argmax() ]
@@ -257,27 +256,38 @@ def ReadAxisLine( I, GeoTransf, flow_from=None, method='std' ):
     [ Xpx, Ypx, Bpx ] = r()
     print 'Axis Read with a Recursion Level of %s' % r.call_depth
     
-    # Cut Borders (there are some issues sometimes)
-    Xpx = Xpx[10:-10]
-    Ypx = Ypx[10:-10]
-    Bpx = Bpx[10:-10]
+    # Cut Borders (there are some issues sometimes) (???)
+    #Xpx = Xpx[10:-10]
+    #Ypx = Ypx[10:-10]
+    #Bpx = Bpx[10:-10]
 
-    # GeoReference
-    # ------------
-    GR = GeoReference( I, GeoTransf )
-    X, Y = GR.RefCurve( Xpx, Ypx )
-    B = Bpx * GeoTransf['PixelSize']
-
-    line = Line2D( [ X, Y ] )
-    line.attr( 'B', B )
-    dx = np.ediff1d( X, to_begin=0 )
-    dy = np.ediff1d( Y, to_begin=0 )
+    # Pixelled Line
+    # -------------
+    line = Line2D( [Xpx, Ypx] )
+    line.attr( 'B', Bpx )
+    dx = np.ediff1d( Xpx, to_begin=0 )
+    dy = np.ediff1d( Ypx, to_begin=0 )
     ds = np.sqrt( dx**2 + dy**2 )
     s = np.cumsum( ds )
     line.attr( 's', s )
     line.attr( 'L', line.d['s'][-1] )
 
-    return line
+    # GeoReferenced Line
+    # ------------------
+    GR = GeoReference( I, GeoTransf )
+    X, Y = GR.RefCurve( Xpx, Ypx )
+    B = Bpx * GeoTransf['PixelSize']
+
+    geoline = Line2D( [ X, Y ] )
+    geoline.attr( 'B', B )
+    dx = np.ediff1d( X, to_begin=0 )
+    dy = np.ediff1d( Y, to_begin=0 )
+    ds = np.sqrt( dx**2 + dy**2 )
+    s = np.cumsum( ds )
+    geoline.attr( 's', s )
+    geoline.attr( 'L', line.d['s'][-1] )
+
+    return line, geoline
 
 
 
