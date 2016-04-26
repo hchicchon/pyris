@@ -119,6 +119,8 @@ landsat_dirs = sorted( [ os.path.join( idir, f ) for f in os.listdir( idir ) if 
 
 for landsat in landsat_dirs:
 
+    continue
+
     # File Names
     # ----------
     landsatname = os.path.split(landsat)[-1]
@@ -191,6 +193,8 @@ print
 mask_files = sorted([os.path.join(maskdir, f) for f in os.listdir(maskdir)])
 for mask_file in mask_files:
 
+    continue
+
     # Landsat Files Name and Data
     # ---------------------------
     name = os.path.splitext(os.path.split( mask_file )[-1])[0]
@@ -250,6 +254,8 @@ print
 lab_files = sorted([os.path.join(labdir, f) for f in os.listdir(labdir)])
 for ilab, lab_file in enumerate(lab_files):
 
+    continue
+
     # Landsat Files Name and Data
     # ---------------------------
     name = os.path.splitext(os.path.split(lab_file)[-1])[0]
@@ -283,6 +289,8 @@ print
 
 skel_files = sorted([os.path.join(skeldir, f) for f in os.listdir(skeldir)])
 for skel_file in skel_files:
+
+    continue
 
     if not PRUNE:
         print 'Spurs will not be removed (set PRUNE to True in order to apply spurs removal to skeleton.)'
@@ -363,19 +371,36 @@ for prune_file in prune_files:
     # Axis Properties Extraction
     print ' * Computing Centerline Properties'
     # Here we get the axis both in pixels and in the georeferenced system
-    axis = ReadAxisLine( pdist, GeoTransf, flow_from=FLOW_FROM, method=RECONSTRUCTION_METHOD )
+    axis, geoaxis = ReadAxisLine( pdist, GeoTransf, flow_from=FLOW_FROM, method=RECONSTRUCTION_METHOD )
 
     # Axis PCS Interpolation
     Npoints = min( max( axis.d['L'] / (0.5*axis.d['B'].mean()), 3000 ), 5000 )
     m = axis.x.size
     PCSs = m # We use the highest degree of smoothness
+
+    STEP = int( 2*geoaxis.d['B'].mean()/GeoTransf['PixelSize'] ) # We Take one point every width
+
+    # Interpolate Pixelled Axis
+    xp_PCS, yp_PCS, d1xp_PCS, d1yp_PCS, d2xp_PCS, d2yp_PCS = InterpPCS(
+        axis.x[::STEP], axis.y[::STEP], # Use some step to reduce the noise
+        s=PCSs, N=Npoints )
+    sp_PCS, thetap_PCS, Csp_PCS = CurvaturePCS( xp_PCS, yp_PCS,
+        d1xp_PCS, d1yp_PCS, d2xp_PCS, d2yp_PCS,
+        method=2, return_diff=False )
+    Bp_PCS = WidthPCS( axis.d['s']/axis.d['s'][-1]*sp_PCS[-1], axis.d['B'], sp_PCS )
+    print '   Filtering channel half-width'
+    for ifilter in xrange(10): Bp_PCS[1:-1] = 0.25 * ( Bp_PCS[:-2] + 2*Bp_PCS[1:-1] + Bp_PCS[2:] )
+    print '   PCS Interpolated...'    
+
+
+    # Interpolate Georeferenced Axis
     x_PCS, y_PCS, d1x_PCS, d1y_PCS, d2x_PCS, d2y_PCS = InterpPCS(
-        axis.x[::20], axis.y[::20], # Use some step to reduce the noise
+        geoaxis.x[::STEP], geoaxis.y[::STEP], # Use some step to reduce the noise
         s=PCSs, N=Npoints )
     s_PCS, theta_PCS, Cs_PCS = CurvaturePCS( x_PCS, y_PCS,
         d1x_PCS, d1y_PCS, d2x_PCS, d2y_PCS,
         method=2, return_diff=False )
-    B_PCS = WidthPCS( axis.d['s']/axis.d['s'][-1]*s_PCS[-1], axis.d['B'], s_PCS )
+    B_PCS = WidthPCS( geoaxis.d['s']/geoaxis.d['s'][-1]*s_PCS[-1], geoaxis.d['B'], s_PCS )
     print '   Filtering channel half-width'
     for ifilter in xrange(10): B_PCS[1:-1] = 0.25 * ( B_PCS[:-2] + 2*B_PCS[1:-1] + B_PCS[2:] )
     print '   PCS Interpolated...'    
@@ -386,6 +411,13 @@ for prune_file in prune_files:
         plt.xlabel( r'x[km]' )
         plt.ylabel( r'y[km]' )
         plt.title( r'River Centerline' )
+        plt.axis( r'equal' )
+        plt.show()
+
+        plt.figure()
+        plt.imshow( pdist, cmap='spectral', interpolation='none' )
+        plt.plot( xp_PCS, yp_PCS, 'r--', lw=2 )
+        plt.axis( 'equal' )
         plt.show()
 
     # Save Axis Properties
