@@ -63,7 +63,11 @@ RECONSTRUCTION_METHOD = 'std'
 # of the Wavelength of the First Harmonic (eventually recommended, when the third harmonic is
 # particularly relevant)
 BEND_SEPARATION_FILTER_REDUCTION = 0.33
-
+# A list of 2D slice tuples to be ignored on the map
+BLACK_MASK_SLICES = [
+    # (Y, X)
+    #slice(), slice()
+]
 # --------------------------------------------------------------
 
 # Directories
@@ -215,6 +219,8 @@ for mask_file in mask_files:
     print 'PROCESSING FILE %s' % ( labfile )
 
     mask = BW( np.load(mask_file) ) # Load Mask
+
+    for s in BLACK_MASK_SLICES: mask.bw[ s[0], s[1] ] = 0 # Eventually apply black masks
 
     # Identify and Label Image Features
     # ---------------------------------
