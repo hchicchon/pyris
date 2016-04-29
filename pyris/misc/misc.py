@@ -4,7 +4,9 @@ import numpy as np
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
+from skimage.io import imread
 import gdal
+import warnings
 
 mpl.rc( 'font', size=20 )
 mpl.rcParams['text.latex.preamble'] = [
@@ -161,33 +163,26 @@ def PlotWavelet(time, sig, icwt, cwt, period):
     plt.axis('tight')
     plt.show()
 
+
 def LoadLandsatData( dirname ):
     '''Load Relevant Bands for the Current Landsat Data'''
-    if os.path.split(dirname)[-1].startswith('LC8'):
-        Bawei = gdal.Open( os.path.join(dirname, '%s_B7.TIF' % os.path.split(dirname)[-1]) )
-        MIR   = gdal.Open( os.path.join(dirname, '%s_B6.TIF' % os.path.split(dirname)[-1]) )
-        NIR   = gdal.Open( os.path.join(dirname, '%s_B5.TIF' % os.path.split(dirname)[-1]) )
-        R     = gdal.Open( os.path.join(dirname, '%s_B4.TIF' % os.path.split(dirname)[-1]) )
-        G     = gdal.Open( os.path.join(dirname, '%s_B3.TIF' % os.path.split(dirname)[-1]) )
-        B     = gdal.Open( os.path.join(dirname, '%s_B2.TIF' % os.path.split(dirname)[-1]) )
-    # Landsat 7 (TM), 4-5 (TM) and 1-5 (MSS)
-    else:
-        Bawei = gdal.Open( os.path.join(dirname, '%s_B6.TIF' % os.path.split(dirname)[-1]) )
-        MIR   = gdal.Open( os.path.join(dirname, '%s_B5.TIF' % os.path.split(dirname)[-1]) )
-        NIR   = gdal.Open( os.path.join(dirname, '%s_B4.TIF' % os.path.split(dirname)[-1]) )
-        R     = gdal.Open( os.path.join(dirname, '%s_B3.TIF' % os.path.split(dirname)[-1]) )
-        G     = gdal.Open( os.path.join(dirname, '%s_B2.TIF' % os.path.split(dirname)[-1]) )
-        B     = gdal.Open( os.path.join(dirname, '%s_B1.TIF' % os.path.split(dirname)[-1]) )
-    # Get Georeference Data
-    bands = [ R.ReadAsArray(), G.ReadAsArray(), B.ReadAsArray(), NIR.ReadAsArray(), MIR.ReadAsArray(), Bawei.ReadAsArray() ]
+    if os.path.split(dirname)[-1].startswith('LC8'): bidx = range( 2, 7 )
+    else: bidx = range( 1, 6 )
+    base = os.path.join( dirname, os.path.basename(dirname) )
+    ext = '.TIF'
+    bnames = [ ('_B'.join(( base, '%d' % i )))+ext for i in bidx ]
+    [ B, G, R, NIR, MIR ] = [ imread( band ) for band in bnames ]
+    bands = [ R, G, B, NIR, MIR ]
+    geo = gdal.Open( bnames[0] )
     GeoTransf = {    
-        'PixelSize' : abs( R.GetGeoTransform()[1] ),
-        'X' : R.GetGeoTransform()[0],
-        'Y' : R.GetGeoTransform()[3],
-        'Lx' : bands[0].shape[0], # TODO : VERIIFICARE (se sbagliato c'e' da scommentare l'overraid in SARA)
-        'Ly' : bands[0].shape[1] # TODO : VERIIFICARE (se sbagliato c'e' da scommentare l'overraid in SARA)
+        'PixelSize' : abs( geo.GetGeoTransform()[1] ),
+        'X' : geo.GetGeoTransform()[0],
+        'Y' : geo.GetGeoTransform()[3],
+        'Lx' : bands[0].shape[0],
+        'Ly' : bands[0].shape[1]
         }
     return bands, GeoTransf
+
 
 
 def isRaster( img ):
@@ -298,6 +293,57 @@ class BW( object ):
         '''Remove an Entire Rectangle from bw figure'''
         return self.RemoveRectangle( rm=1 )
 
+
+class interactive_mask( object ):
+
+    def __init__( self, path ):
+        self.path = os.path.normpath( path )
+        self.name =  self.path.split( os.sep )[-1]
+        self.real_color = self.build_real_color()
+
+    def build_real_color( self ):
+        if self.name.startswith( 'LC8' ):
+            warnings.warn( 'Landsat 8 may return distorted images as real color.', Warning )
+            b1, b2, b3 = 'B6', 'B5', 'B4'
+        else:
+            b1, b2, b3 = 'B5', 'B4', 'B3'
+        B1, B2, B3 = map( imread, [ os.path.join( self.path, '_'.join((self.name,bname))+'.TIF' ) for bname in [ b1, b2, b3 ] ] )
+        return np.dstack( ( B1, B2, B3 ) )
+
+    def __call__( self ):
+        white_masks = []
+        plt.ioff()
+        fig = plt.figure()
+        plt.title( 'Press-drag a rectangle for your white mask. Close when you are finish.' )
+        plt.imshow( self.real_color )
+        plt.axis('equal')
+        x_press = None
+        y_press = None
+        def onpress(event):
+            global x_press, y_press
+            x_press = int(event.xdata) if (event.xdata != None) else None
+            y_press = int(event.ydata) if (event.ydata != None) else None
+        def onrelease(event):
+            global x_press, y_press
+            x_release = int(event.xdata) if (event.xdata != None) else None
+            y_release = int(event.ydata) if (event.ydata != None) else None
+            if (x_press != None and y_press != None
+                and x_release != None and y_release != None):
+                (xs, xe) = (x_press, x_release+1) if (x_press <= x_release) \
+                  else (x_release, x_press+1)
+                (ys, ye) = (y_press, y_release+1) if (y_press <= y_release) \
+                  else (y_release, y_press+1)
+                print( "The mask you selected is [{0}:{1},{2}:{3}]".format(
+                    xs, xe, ys, ye) )
+                white_masks.append( ( slice(ys, ye), slice(xs, xe) ) )
+                plt.fill( [xs,xe,xe,xs,xs], [ys,ys,ye,ye,ys], 'r', alpha=0.25 )
+                event.canvas.draw()
+            x_press = None
+            y_press = None
+        cid_press   = fig.canvas.mpl_connect('button_press_event'  , onpress  )
+        cid_release = fig.canvas.mpl_connect('button_release_event', onrelease)
+        plt.show()
+        return white_masks
 
 def ShowRasterData( data, label='', title='' ):
     '''Return a GridSpec Instance with Raster imshow,

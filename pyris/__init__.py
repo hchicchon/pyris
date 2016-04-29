@@ -1,8 +1,15 @@
+# ===================================================================================
+#
+# Package: PyRIS
+# Author: Federico Monegaglia
+# Date: 2016
+# Description: A Toolbox for extracting river planform features from satellite images
+#
+# ===================================================================================
 
 '''
-PyRiS - Python Rivers from Satellite
+PyRIS :: Python - RIvers from Satellite
 ====================================
-A Toolbox for extracting river planform features from satellite images.
 '''
 
 # Imports
@@ -10,7 +17,6 @@ from skimage.util import img_as_ubyte
 from skimage.io import imread
 from scipy import ndimage
 import warnings
-
 
 # Suppress Warnings
 warnings.filterwarnings("ignore")
@@ -38,7 +44,7 @@ __all__ = [
     # vector
     'AxisReader', 'ReadAxisLine',
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
-    'MigRateBend', 'LoadLandsatData'
+    'MigRateBend', 'LoadLandsatData',
     ]
 
 # Check if correct version of MLPY is installed
@@ -56,3 +62,4 @@ MLPYmsg = '''Module MPLY not found or the version is old.'''
 from raster import *
 from vector import *
 from misc import *
+from config import *

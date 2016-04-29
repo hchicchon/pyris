@@ -1,0 +1,121 @@
+#!/usr/bin/env python
+
+# =============================================
+# Script: pyris
+# Package: PyRIS
+# Author: Federico Monegaglia
+# Date: April 2016
+# Description: Wrapper script for PyRIS package
+# =============================================
+
+import os, sys, ast
+import argparse
+
+try:
+    import ConfigParser
+except ImportError:
+    import configparser as ConfigParser
+
+sys.path.append( os.curdir ) # XXX: Only in development version (i.e. if pyris is not installed)!!!!
+
+class StoreDictSet( argparse.Action ):
+    '''Read a Settings Dictionary from the command line and store it in the arguments' namespace'''
+    def __call__( self, parser, namespace, str_settings, option_string=None ):
+        settings = {}
+        options = str_settings.split( ' ' )
+        for option in options:
+            name, value = option.split( '=' )
+            settings[ name ] = value
+        if hasattr( namespace, 'settings' ):
+            setattr( namespace, 'settings', dict( namespace.settings.items() + settings.items() ) )
+        else:
+            setattr( namespace, 'settings', settings )
+        return None
+
+
+# ============================
+# Parse Command Line Arguments
+# ============================
+parser = argparse.ArgumentParser( description='PyRIS :: Python - RIvers from Satellite' )
+# Config Settings
+parser.add_argument( 'config', help='input configuration file' )
+parser.add_argument( '-i', '--init', action='store_true', help='initialize a config file with default settings' )
+parser.add_argument( '-s', '--set', action=StoreDictSet, type=str, help='set variable in config file' )
+parser.add_argument( '--select-white-mask', type=str, help='interactively draw white masks' )
+parser.add_argument( '--select-black-mask', type=str, help='interactively draw black masks' )
+# Segmentation
+parser.add_argument( '-S', '--segmentation', action='store_true', help='perform segmentation of all the landsat folders' )
+parser.add_argument( '--label', type=str, help='if auto, pyris will try to label masks by itself' )
+# Axis Extraction
+parser.add_argument( '-A', '--axis', action='store_true', help='extract main channel axis from channel mask' )
+
+args = parser.parse_args()
+
+# Initialize Config File
+# ----------------------
+if args.init:
+    from pyris.config import default_config
+    cf = default_config()
+else:
+    cf = ConfigParser.RawConfigParser()
+    cf.read( args.config )
+
+# Individual Settings
+# -------------------
+if hasattr( args, 'settings' ):
+    for section in cf.sections():
+        for key, val in args.settings.iteritems():
+            if cf.has_option( section, key ):
+                cf.set( section, key, val )
+                print 'Set: [%s] %s = %s' % ( section, key, val )
+
+# Interactiverly Draw White Mask
+# ------------------------------
+if args.select_white_mask is not None:
+    from pyris.misc import interactive_mask
+    white_masks = interactive_mask( args.select_white_mask )()
+    if white_masks != []: cf.set( 'Segmentation', 'white_masks', white_masks )
+
+# Interactiverly Draw Black Mask
+# ------------------------------
+if args.select_black_mask is not None:
+    from pyris.misc import interactive_mask
+    black_masks = interactive_mask( args.select_black_mask )()
+    if black_masks != []: cf.set( 'Segmentation', 'black_masks', black_masks )
+
+# Store Configuration File
+# ------------------------
+with open( args.config, 'w' ) as cfg_file: cf.write( cfg_file )
+if args.init: print 'Configuration file %s created' % args.config
+
+
+# ===================
+# Run PyRIS Functions
+# ===================
+
+# Set Up PyRIS Environment
+# ------------------------
+geodir = os.path.join( cf.get( 'Data', 'output' ), 'geotransf' )
+maskdir = os.path.join( cf.get( 'Data', 'output' ), 'mask' )
+axisdir = os.path.join( cf.get( 'Data', 'output' ), 'axis' )
+dirs_to_make = [ d for d in [ geodir, maskdir, axisdir ] if not os.path.isdir( d ) ]
+if len(dirs_to_make)>0: print 'The following directories are being created ' % dirs_to_make
+map( os.makedirs, dirs_to_make )
+landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.listdir(cf.get('Data','input'))
+                         if os.path.isdir( os.path.join(cf.get('Data','input'), f) ) ] )
+
+# Perform Image Segmentation
+# --------------------------
+if args.segmentation:
+    from pyris.raster.segmentation import run_all_segmentation
+    title = 'Running image segmentation over the external directory: %s' % cf.get( 'Data', 'input' )
+    print; print title; print '-'*len(title)
+    if args.label == 'auto': auto_label = True
+    else: auto_label = False
+    run_all_segmentation( landsat_dirs, geodir, maskdir, cf, auto_label=auto_label )
+
+# Skeletonize and Extract Centerline
+# ----------------------------------
+if args.axis:
+    from pyris.vector.axis import vectorize_all
+    

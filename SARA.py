@@ -30,50 +30,50 @@ import warnings
 # --------------------------------------------------------------
 # Name of the Input Directory ( path: ./inputs/RIVER/<landsat_directories> )
 
-try: RIVER=sys.argv[1]
-except IndexError: RIVER = 'beni'
-# Run Interactively only if you want to manually select object labels (recommended)
-RUN_INTERACTIVE = True
-# Index used to isolate the river channel from the surrounding planform
-# ( can be either LGR (log(Green/Red)), LGB (log(Green/Blue)),
-#   NDVI (normalized difference veg, index), MNDWI (water index) )
-SEGMENTATION_METHOD = 'NDVI'
-# Thresholding method for Otsu's Threshold ('global' or 'local')
-THRESH_METHOD = 'global'
-# In order to store river properties streamwise, define where the water is coming from
-# ( b:bottom, t:top, l:left, r:right)
-FLOW_FROM = 'b'
-# In order to remove tributaries and useless branches from the image mask,
-# enter a scale for the average channel width (in meters)
-RIVER_WIDTH = 300
-# Skeletonization leaves some spurs on the planform. Pruning algorithm helps to get rid
-# of them, but it is very expensive. If a length based approach is used to reconstruct the planform shape
-# (RECONSTRUCTION_METHOD='length'), pruning may be skipped (PRUNE=False) or PRUNE_ITER can be kept very small.
-# If RECONSTRUCTION_METHOD='width', a high limit of iterations is required (i.e., PRUNE_ITER=250).
-# Be aware that, on complex planforms, PRUNE_ITER>500 could result in many hours of iteration.
-PRUNE = True # Use pruning after skeletonization (require if width is used as axis bifurcation selector)
-PRUNE_ITER = 25 # Maximum Number of Iterations in Spurs Removal Algorithm
-# During channel axis vectorization, external branches, bifurcations andconflunces can be found.
-# In order to choose one of them automatically, select width- or length-based approach by setting
-# RECONSTRUCTION_METHOD either to 'width', 'length' or 'std'.
-# Standard 'std' method uses width if the width of the branches is similar, length otherwise
-RECONSTRUCTION_METHOD = 'std'
-# A Multiplier for the Inverse Wavelet Transfor Threshold
-# 1: No Reduction; 0.5: Half-wavelength of the First Harmonie (Recommended); 0.33: One Third
-# of the Wavelength of the First Harmonic (eventually recommended, when the third harmonic is
-# particularly relevant)
-BEND_SEPARATION_FILTER_REDUCTION = 0.33
-# A list of 2D slice tuples to be ignored on the map
-BLACK_MASK_SLICES = [
-    # (Y, X)
-    #slice(), slice()
-]
-# --------------------------------------------------------------
+## try: RIVER=sys.argv[1]
+## except IndexError: RIVER = 'beni'
+## # Run Interactively only if you want to manually select object labels (recommended)
+## RUN_INTERACTIVE = True
+## # Index used to isolate the river channel from the surrounding planform
+## # ( can be either LGR (log(Green/Red)), LGB (log(Green/Blue)),
+## #   NDVI (normalized difference veg, index), MNDWI (water index) )
+## SEGMENTATION_METHOD = 'NDVI'
+## # Thresholding method for Otsu's Threshold ('global' or 'local')
+## THRESH_METHOD = 'global'
+## # In order to store river properties streamwise, define where the water is coming from
+## # ( b:bottom, t:top, l:left, r:right)
+## FLOW_FROM = 'b'
+## # In order to remove tributaries and useless branches from the image mask,
+## # enter a scale for the average channel width (in meters)
+## RIVER_WIDTH = 300
+## # Skeletonization leaves some spurs on the planform. Pruning algorithm helps to get rid
+## # of them, but it is very expensive. If a length based approach is used to reconstruct the planform shape
+## # (RECONSTRUCTION_METHOD='length'), pruning may be skipped (PRUNE=False) or PRUNE_ITER can be kept very small.
+## # If RECONSTRUCTION_METHOD='width', a high limit of iterations is required (i.e., PRUNE_ITER=250).
+## # Be aware that, on complex planforms, PRUNE_ITER>500 could result in many hours of iteration.
+## PRUNE = True # Use pruning after skeletonization (require if width is used as axis bifurcation selector)
+## PRUNE_ITER = 25 # Maximum Number of Iterations in Spurs Removal Algorithm
+## # During channel axis vectorization, external branches, bifurcations andconflunces can be found.
+## # In order to choose one of them automatically, select width- or length-based approach by setting
+## # RECONSTRUCTION_METHOD either to 'width', 'length' or 'std'.
+## # Standard 'std' method uses width if the width of the branches is similar, length otherwise
+## RECONSTRUCTION_METHOD = 'std'
+## # A Multiplier for the Inverse Wavelet Transfor Threshold
+## # 1: No Reduction; 0.5: Half-wavelength of the First Harmonie (Recommended); 0.33: One Third
+## # of the Wavelength of the First Harmonic (eventually recommended, when the third harmonic is
+## # particularly relevant)
+## BEND_SEPARATION_FILTER_REDUCTION = 0.33
+## # A list of 2D slice tuples to be ignored on the map
+## BLACK_MASK_SLICES = [
+##     # (Y, X)
+##     #slice(), slice()
+## ]
+## # --------------------------------------------------------------
 
 # Directories
 # -----------
-idir = os.path.join( 'inputs', RIVER ) # Input Directory containing Landsat Data Directories
-odir = os.path.join( 'outputs', RIVER ) # Main Output Directory
+## idir = os.path.join( 'inputs', RIVER ) # Input Directory containing Landsat Data Directories
+## odir = os.path.join( 'outputs', RIVER ) # Main Output Directory
 sdirs = { # Output Directories for each of the Segmentation Methods
     'NDVI' : os.path.join( odir, 'NDVI' ),
     'MNDWI' : os.path.join( odir, 'MNDWI' ),
