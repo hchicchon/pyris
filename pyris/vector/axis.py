@@ -58,7 +58,7 @@ class AxisReader( object ):
 
         strides = self.BuildStrides()
 
-        if self.start_from == 't':
+        if self.start_from == 'b':
             for i in xrange( self.hits.shape[0]-1, 0, -1 ):
                 if np.all( self.hits[i,:] == 0 ): continue
                 for j in xrange( 1, self.hits.shape[1]-1 ):
@@ -69,7 +69,7 @@ class AxisReader( object ):
                                 self.i0, self.j0 = i, j
                                 return None
 
-        elif self.start_from == 'b':
+        elif self.start_from == 't':
             for i in xrange( 1, self.hits.shape[0] ):
                 if np.all( self.hits[i,:] == 0 ): continue
                 for j in xrange( 1, self.hits.shape[1]-1 ):
@@ -81,8 +81,8 @@ class AxisReader( object ):
                                 self.i0, self.j0 = i, j
                                 return None
 
-        elif self.start_from == 'l':
-            for j in xrange( 1, self.hits.shape[1]-1 ):
+        elif self.start_from == 'r':
+            for j in xrange( 1, self.hits.shape[1] ):
                 if np.all( self.hits[:,j] == 0 ): continue
                 for i in xrange( 1, self.hits.shape[0]-1 ):
                     for primitive in self.primitives:
@@ -92,7 +92,7 @@ class AxisReader( object ):
                                 self.i0, self.j0 = i, j
                                 return None
 
-        elif self.start_from == 'r':
+        elif self.start_from == 'l':
             for j in xrange( self.hits.shape[1]-1, 0, -1 ):
                 if np.all( self.hits[:,j] == 0 ): continue
                 for i in xrange( 1, self.hits.shape[0]-1 ):
@@ -180,6 +180,7 @@ class AxisReader( object ):
                         # Set the maximum number of iteration
                         if self.method == 'fast': ITER = self.Lmin
                         else: ITER = MAXITER                        
+
                         # Recursive call
                         axr = AxisReader( self.I*self.hits, first_point=first_point, method=self.method,
                                           call_depth=self.call_depth+1, jidx=self.jidx )
@@ -212,7 +213,7 @@ class AxisReader( object ):
                         break
 
                     elif self.method == 'fast':
-                        if np.all( jncsl ) < MAXITER: # Planform is finished
+                        if np.all( jncsl ) < ITER: # Planform is finished
                             _J, _I, _ = axijs[ jncsw.argmax() ] # Take the widest branch
                             self.call_depth = rdepths[ jncsw.argmax() ]
                             I.extend( _I ), J.extend( _J )
@@ -222,7 +223,7 @@ class AxisReader( object ):
                             idxs_to_rm = []
                             # Look for the short branches
                             for idx in xrange( len( pos ) ):
-                                if jncsl[idx] < MAXITER:
+                                if jncsl[idx] < ITER:
                                     self.hits[ axijs[idx][1][0], axijs[idx][0][0] ] = 0
                                     idxs_to_rm.append( idx )
                             # Remove the short branches
@@ -238,6 +239,9 @@ class AxisReader( object ):
                         I.extend( _I ), J.extend( _J )
                         del axijs, axij, axr # Free some memory
                         continue
+
+                    else:
+                        raise ValueError, 'method %s not known. Must be either "std" or "fast"' % self.method
 
         if ITER == MAXITER-1 and not self.method == 'fast':
             print 'WARNING: Maximum number of iteration reached in axis extraction!'
@@ -274,7 +278,7 @@ def ReadAxisLine( I, flow_from=None, method='std' ):
     
     # Pixelled Line
     # -------------
-    line = Line2D( x=Xpx, y=Ypx, B=B )
+    line = Line2D( x=Xpx, y=Ypx, B=Bpx )
     return line
 
     ## # GeoReferenced Line

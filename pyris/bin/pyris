@@ -107,7 +107,7 @@ geodir = os.path.join( cf.get( 'Data', 'output' ), 'geotransf' )
 maskdir = os.path.join( cf.get( 'Data', 'output' ), 'mask' )
 axisdir = os.path.join( cf.get( 'Data', 'output' ), 'axis' )
 dirs_to_make = [ d for d in [ geodir, maskdir, axisdir ] if not os.path.isdir( d ) ]
-if len(dirs_to_make)>0: print 'The following directories are being created ' % dirs_to_make
+if len( dirs_to_make )>0: print 'The following directories are being created %s' % dirs_to_make
 map( os.makedirs, dirs_to_make )
 landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.listdir(cf.get('Data','input'))
                          if os.path.isdir( os.path.join(cf.get('Data','input'), f) ) ] )

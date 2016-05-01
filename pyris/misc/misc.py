@@ -35,14 +35,16 @@ class Line2D( object ): # This must be put down better!
         return None
 
     def join( self, line2d ):
-        ds = np.sqrt( (self.x[-1]-line2d.x[-1])**2 + (self.y[-1]-line2d.y[-1])**2 )
+        if len(self.x) == 0:
+            ds = 0
+        else:
+            ds = np.sqrt( (self.x[-1]-line2d.x[-1])**2 + (self.y[-1]-line2d.y[-1])**2 )
         self.x = np.concatenate( (self.x, line2d.x) )
         self.y = np.concatenate( (self.y, line2d.y) )
         self.B = np.concatenate( (self.B, line2d.B) )
-        self.s = np.concatenate( (self.s, self.line2d.s+ds) )
-        self.L = self.L + line2d.L
+        self.s = np.concatenate( (self.s, line2d.s+ds) )
+        self.L = self.s[-1]
         return None
-
 
 def ediff1d0( x ):
     if len( x ) == 0:

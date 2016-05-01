@@ -71,6 +71,13 @@ from misc import *
 from config import *
 
 
+# TMP
+def show(I):
+    plt.figure()
+    plt.imshow(I, cmap='spectral', interpolation='none')
+    plt.colorbar()
+    plt.show()
+
 # =====================
 # Main Script Functions
 # =====================
@@ -136,12 +143,17 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
         mask = RemoveSmallObjects( mask, 100*pixel_width**2 ) # One Hundred Widths of Channel at Least is Required
         radius = max( np.floor( 0.5 * ( pixel_width ) ) - 3, 0 )
         mask = mm.binary_opening( mask, mm.disk( radius ) ) # Break Small Connectins
-        mask = CleanIslands( mask, 2*pixel_width**2 ) # Clean Holes Inside the Planform
+        mask = CleanIslands( mask, 10*pixel_width**2 ) # Clean Holes Inside the Planform
         mask = RemoveSmallObjects( mask, 100*pixel_width**2 ) # Remove New Small Objects
         mask = mask.astype( int )
 
-        # Label Masks
-        mask_lab, num_features = ndimage.measurements.label( mask ) # FIXME: apply labelling to the skeleton and add --fast flag to pyris (remove minimum values from skeleton to make pruning faster)!
+        # Label Masks - we need to perform a rotation in order to have labels going from the largest to the smallest
+        rot_angle = { 'b': 0, 'l': 1, 't': 2, 'r': 3 } # Counter-clockwise rotationan angle
+        mask = np.rot90( mask, rot_angle[config.get( 'Data', 'flow_from' )] )
+        mask_lab, num_features = ndimage.measurements.label( mask )
+        # Rotate back to the original
+        mask = np.rot90( mask, -rot_angle[config.get( 'Data', 'flow_from' )] )
+        mask_lab = np.rot90( mask_lab, -rot_angle[config.get( 'Data', 'flow_from' )] )
         print 'labelling feature in channel mask...'
         print 'found %s features in river mask %s...' % ( num_features, os.path.basename(maskfile) )
 
@@ -154,7 +166,8 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
                 plt.text( c0[1], c0[0], '%s' % ifeat, fontsize=30, bbox=dict( facecolor='white' ) )
             plt.show()
             labs = raw_input( 'Please enter the label(s) do you want to use? (if more than one, separate them with a space): ' ).split(' ')
-            for lab in labs: mask += np.where( mask_lab==int(lab), int(lab), 0 )
+            mask *= 0
+            for ilab, lab in enumerate( labs ): mask += np.where( mask_lab==int(lab), ilab+1, 0 )
         else:
             # The larger element in the image will be used.
             warnings.warn('automated labels may lead to errors! please check your results!')
@@ -198,27 +211,38 @@ def vectorize_all( geodir, maskdir, config, axisdir ):
 
         # Load mask and GeoFile
         GeoTransf = pickle.load( open( geofile ) )
-        mask = np.load( maskfile )
-
+        mask = np.load( maskfile ).astype( int )
+        num_features = mask.max()
         # Skeletonization
         print 'skeletonizing...'
         skel, dist = Skeletonize( np.where(mask>0,1,0).astype( int ) ) # Compute Axis and Distance
         labelled_skel = skel.astype(int) * mask.astype(int)
 
         # Pruning
-        print 'pruning n=%d labelled elements...' % mask.max()
+        print 'pruning n=%d labelled elements...' % num_features
         pruned = np.zeros( mask.shape, dtype=int )
-        for lab in xrange( 1, mask.max()+1 ):
+        for lab in xrange( 1, num_features+1 ):
             print 'pruning label %d...' % lab
-            pruned += Pruning( labelled_skel==lab, int(config.get('Pruning', 'prune_iter')), smooth=False ) # Remove Spurs
-
+            pruned += lab*Pruning( labelled_skel==lab, int(config.get('Pruning', 'prune_iter')), smooth=False ) # Remove Spurs
+        
         # Centerline Extraction
-        print 'extracting centerline of n=%d labelled elements...' % pruned.max()
+        print 'extracting centerline of n=%d labelled elements...' % num_features
         axis = Line2D()
-        for lab in xrange( pruned.max(), 0, -1 ): # FIXME!!!! Dipende da flow_from!!!! -> forse meglio ruotare l'immagine a seconda del flow from già prina della fase di labelling oppure trovare la label giusta dalla posizione
+        for lab in xrange( num_features, 0, -1 ):
             print 'extracting label %d...' % lab
-            axis.join( ReadAxisLine( dist*(pruned==lab), flow_from=config.get('Data', 'flow_from'),
-                                     method=config.get('Axis', 'reconstruction_method') ) )
+            pdist = dist*(pruned==lab)
+            curr_axis = ReadAxisLine( pdist, flow_from=config.get('Data', 'flow_from'),
+                                      method=config.get('Axis', 'reconstruction_method') )
+            axis.join( curr_axis )
+
+            plt.figure()
+            plt.imshow(mask, cmap='spectral', interpolation='none')
+            plt.plot(curr_axis.x, curr_axis.y, 'r', lw=2)
+            plt.show()
+        plt.figure()
+        plt.imshow(mask, cmap='spectral', interpolation='none')
+        plt.plot(axis.x, axis.y, 'r', lw=2)
+        plt.show()
 
         # Interpolation
         print 'parametric cublic spline interpolation of the centerline...'
@@ -232,15 +256,16 @@ def vectorize_all( geodir, maskdir, config, axisdir ):
             )
         sp_PCS, thetap_PCS, Csp_PCS = CurvaturePCS( xp_PCS, yp_PCS, d1xp_PCS, d1yp_PCS, d2xp_PCS, d2yp_PCS,
                                                     method=2, return_diff=False )
-        Bp_PCS = WidthPCS( axis.s/axis.L*sp_PCS[-1], axis.B, sp_PCS )
+
+        Bp_PCS = WidthPCS( axis.s/axis.s[-1]*sp_PCS[-1], axis.B, sp_PCS )
         for ifilter in xrange(10): Bp_PCS[1:-1] = 0.25 * ( Bp_PCS[:-2] + 2*Bp_PCS[1:-1] + Bp_PCS[2:] ) # Filter channel width
        
         # GeoReferenced PCS
         s_PCS, theta_PCS, Cs_PCS, B_PCS = \
-            sp_PCS*GeoTransf['PixelSize'], thetap_PCS, Cs_PCS/GeoTransf['PixelSize'], Bp_PCS*GeoTransf['PixelSize']
+            sp_PCS*GeoTransf['PixelSize'], thetap_PCS, Csp_PCS/GeoTransf['PixelSize'], Bp_PCS*GeoTransf['PixelSize']
         GR = GeoReference( pruned, GeoTransf )
         x_PCS, y_PCS = GR.RefCurve( xp_PCS, yp_PCS )
 
         # Save Axis Properties
         print 'saving main channel data...'
-        np.save( ofile, ( xp_PCS, yp_PCS, x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS ) )
+        np.save( axisfile, ( xp_PCS, yp_PCS, x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS ) )
