@@ -41,15 +41,16 @@ parser = argparse.ArgumentParser( description='PyRIS :: Python - RIvers from Sat
 parser.add_argument( 'config', help='input configuration file' )
 parser.add_argument( '-i', '--init', action='store_true', help='initialize a config file with default settings' )
 parser.add_argument( '-s', '--set', action=StoreDictSet, type=str, help='set variable in config file' )
-parser.add_argument( '--select-white-mask', type=str, help='interactively draw white masks' )
-parser.add_argument( '--select-black-mask', type=str, help='interactively draw black masks' )
+parser.add_argument( '--select-white-mask', type=str, help='interactively draw white masks from landsat data' )
+parser.add_argument( '--select-black-mask', type=str, help='interactively draw black masks from landsat data' )
 # Segmentation
 parser.add_argument( '-S', '--segmentation', action='store_true', help='perform segmentation of all the landsat folders' )
-parser.add_argument( '--label', type=str, help='if auto, pyris will try to label masks by itself' )
+parser.add_argument( '--label', type=str, help='if auto, pyris will try to label masks by itself. other options are max and all' )
 # Axis Extraction
 parser.add_argument( '-A', '--axis', action='store_true', help='extract main channel axis from channel mask' )
 
 args = parser.parse_args()
+
 
 # Initialize Config File
 # ----------------------
@@ -59,6 +60,13 @@ if args.init:
 else:
     cf = ConfigParser.RawConfigParser()
     cf.read( args.config )
+    if len( sys.argv ) == 2:
+        print 'reading configuration file %s' % args.config
+        for section in cf.sections():
+            print '\n[%s]' % section
+            for option in cf.options( section ):
+                print '%s = %s' % ( option, cf.get( section, option ) )
+
 
 # Individual Settings
 # -------------------
@@ -107,15 +115,15 @@ landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.lis
 # Perform Image Segmentation
 # --------------------------
 if args.segmentation:
-    from pyris.raster.segmentation import run_all_segmentation
+    from pyris import segment_all
     title = 'Running image segmentation over the external directory: %s' % cf.get( 'Data', 'input' )
     print; print title; print '-'*len(title)
-    if args.label == 'auto': auto_label = True
-    else: auto_label = False
-    run_all_segmentation( landsat_dirs, geodir, maskdir, cf, auto_label=auto_label )
+    segment_all( landsat_dirs, geodir, cf, maskdir, auto_label=args.label )
 
 # Skeletonize and Extract Centerline
 # ----------------------------------
 if args.axis:
-    from pyris.vector.axis import vectorize_all
-    
+    from pyris import vectorize_all
+    title = 'Extracting centerlines for masks in internal directory: %s' % cf.get( 'Data', 'output' )
+    print; print title; print '-'*len(title)
+    vectorize_all( geodir, maskdir, cf, axisdir )

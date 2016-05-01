@@ -22,18 +22,32 @@ plt.close( 'all' )
 
 # Classes
 # =======
-class Line2D( object ):
-    # FIX : use decorators
-    d = {} # Dictionary
+class Line2D( object ): # This must be put down better!
     
-    def __init__( self, line ):
-        self.x = line[0]
-        self.y = line[1]
-        self.d['x'] = self.x
-        self.d['y'] = self.y
-                
-    def attr( self, key, val ):
-        self.d[key] = val
+    def __init__( self, x=np.array([]), y=np.array([]), B=np.array([]) ):
+        dx = ediff1d0( x )
+        dy = ediff1d0( y )
+        ds = np.sqrt( dx**2 + dy**2 )
+        s = np.cumsum( ds )
+        try: L = s[-1]
+        except IndexError: L = 0
+        self.x, self.y, self.B, self.s, self.L = x, y, B, s, L
+        return None
+
+    def join( self, line2d ):
+        ds = np.sqrt( (self.x[-1]-line2d.x[-1])**2 + (self.y[-1]-line2d.y[-1])**2 )
+        self.x = np.concatenate( (self.x, line2d.x) )
+        self.y = np.concatenate( (self.y, line2d.y) )
+        self.B = np.concatenate( (self.B, line2d.B) )
+        self.s = np.concatenate( (self.s, self.line2d.s+ds) )
+        self.L = self.L + line2d.L
+        return None
+
+
+def ediff1d0( x ):
+    if len( x ) == 0:
+        return np.ediff1d( x )
+    return np.ediff1d( x, to_begin=0 )
 
 
 class GeoReference( object ):
@@ -51,6 +65,7 @@ class GeoReference( object ):
     def RefCurve( self, X, Y ):
         XX, YY = self.RefImage()
         return X*self.GeoTransf['PixelSize']+XX[0], Y*self.GeoTransf['PixelSize']+YY[0]
+
 
 def get_dt( name1, name2 ):
     '''Return Time Interval in Years'''
