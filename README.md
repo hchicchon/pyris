@@ -1,8 +1,7 @@
 # README #
 
-WARNING!
- - ucayali is up-to-date for SARA script (26/04/16)
- - sinba is up-to-date for  SINBA script (26/04/16)
+Argparse is the up-to-date code. Everything will soon be merged in it
+
 PyRIS - Python RIvers from Satellite
 ### Extract River Features from Landsat Multispectral Data ###
 
