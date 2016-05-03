@@ -22,8 +22,7 @@ class StoreDictSet( argparse.Action ):
     '''Read a Settings Dictionary from the command line and store it in the arguments' namespace'''
     def __call__( self, parser, namespace, str_settings, option_string=None ):
         settings = {}
-        options = str_settings.split( ' ' )
-        for option in options:
+        for option in str_settings:
             name, value = option.split( '=' )
             settings[ name ] = value
         if hasattr( namespace, 'settings' ):
@@ -32,15 +31,16 @@ class StoreDictSet( argparse.Action ):
             setattr( namespace, 'settings', settings )
         return None
 
-
+class ParserException( Exception ): pass
+    
 # ============================
 # Parse Command Line Arguments
 # ============================
 parser = argparse.ArgumentParser( description='PyRIS :: Python - RIvers from Satellite' )
 # Config Settings
-parser.add_argument( 'config', help='input configuration file' )
+parser.add_argument( 'config', nargs='?', help='input configuration file' )
 parser.add_argument( '-i', '--init', action='store_true', help='initialize a config file with default settings' )
-parser.add_argument( '-s', '--set', action=StoreDictSet, type=str, help='set variable in config file' )
+parser.add_argument( '-s', '--set', nargs='*', action=StoreDictSet, type=str, help='set variable in config file' )
 parser.add_argument( '--select-white-mask', type=str, help='interactively draw white masks from landsat data' )
 parser.add_argument( '--select-black-mask', type=str, help='interactively draw black masks from landsat data' )
 # Segmentation
@@ -48,9 +48,16 @@ parser.add_argument( '-S', '--segmentation', action='store_true', help='perform 
 parser.add_argument( '--label', type=str, help='if auto, pyris will try to label masks by itself. other options are max and all' )
 # Axis Extraction
 parser.add_argument( '-A', '--axis', action='store_true', help='extract main channel axis from channel mask' )
-
+parser.add_argument( '--mask-dir', type=str, help='directory containing mask files' )
+parser.add_argument( '--no-geo', action='store_true', help='do not georeference mask files' )
+# Planform Migration
+parser.add_argument( '-M', '--migration', action='store_true', help='compute migration rates of subsequent axis' )
+parser.add_argument( '--axis-files', nargs='+', help='ordered sequence of files for which the migration rates must be computed' )
+parser.add_argument( '--axis-columns', nargs=2, default=[0,1], help='columns containing axis coordinates' )
+parser.add_argument( '--output-dir', default='migration_output', help='directory where outputs fof migration rates will be stored' )
+parser.add_argument( '--filter-multiplier', default=0.33, help='multiplier of the wavelet filter' )
+# Parse Arguments
 args = parser.parse_args()
-
 
 # Initialize Config File
 # ----------------------
@@ -58,15 +65,20 @@ if args.init:
     from pyris.config import default_config
     cf = default_config()
 else:
-    cf = ConfigParser.RawConfigParser()
-    cf.read( args.config )
-    if len( sys.argv ) == 2:
-        print 'reading configuration file %s' % args.config
-        for section in cf.sections():
-            print '\n[%s]' % section
-            for option in cf.options( section ):
-                print '%s = %s' % ( option, cf.get( section, option ) )
-
+    if args.config is not None:
+        cf = ConfigParser.RawConfigParser()
+        cf.read( args.config )
+        if len( sys.argv ) == 2:
+            print 'reading configuration file %s' % args.config
+            for section in cf.sections():
+                print '\n[%s]' % section
+                for option in cf.options( section ):
+                    print '%s = %s' % ( option, cf.get( section, option ) )
+    else:
+        if args.axis_files is None:
+            e = 'Too few arguments. Either <config> or <axis files> must be given\n'
+            parser.print_help()
+            raise ParserException, e
 
 # Individual Settings
 # -------------------
@@ -81,15 +93,17 @@ if hasattr( args, 'settings' ):
 # ------------------------------
 if args.select_white_mask is not None:
     from pyris.misc import interactive_mask
+    print 'Select white masks'
     white_masks = interactive_mask( args.select_white_mask )()
-    if white_masks != []: cf.set( 'Segmentation', 'white_masks', white_masks )
+    cf.set( 'Segmentation', 'white_masks', white_masks )
 
 # Interactiverly Draw Black Mask
 # ------------------------------
 if args.select_black_mask is not None:
     from pyris.misc import interactive_mask
+    print 'Select black masks'
     black_masks = interactive_mask( args.select_black_mask )()
-    if black_masks != []: cf.set( 'Segmentation', 'black_masks', black_masks )
+    cf.set( 'Segmentation', 'black_masks', black_masks )
 
 # Store Configuration File
 # ------------------------
@@ -103,18 +117,19 @@ if args.init: print 'Configuration file %s created' % args.config
 
 # Set Up PyRIS Environment
 # ------------------------
-geodir = os.path.join( cf.get( 'Data', 'output' ), 'geotransf' )
-maskdir = os.path.join( cf.get( 'Data', 'output' ), 'mask' )
-axisdir = os.path.join( cf.get( 'Data', 'output' ), 'axis' )
-dirs_to_make = [ d for d in [ geodir, maskdir, axisdir ] if not os.path.isdir( d ) ]
-if len( dirs_to_make )>0: print 'The following directories are being created %s' % dirs_to_make
-map( os.makedirs, dirs_to_make )
-landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.listdir(cf.get('Data','input'))
-                         if os.path.isdir( os.path.join(cf.get('Data','input'), f) ) ] )
+if args.config is not None:
+    geodir = os.path.join( cf.get( 'Data', 'output' ), 'geotransf' )
+    maskdir = os.path.join( cf.get( 'Data', 'output' ), 'mask' )
+    axisdir = os.path.join( cf.get( 'Data', 'output' ), 'axis' )
+    migdir = os.path.join( cf.get( 'Data', 'output' ), 'migration' )
 
 # Perform Image Segmentation
 # --------------------------
 if args.segmentation:
+    landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.listdir(cf.get('Data','input'))
+                             if os.path.isdir( os.path.join(cf.get('Data','input'), f) ) ] )
+    if not os.path.isdir( maskdir ): os.makedirs( maskdir )
+    if not os.path.isdir( geodir ): os.makedirs( geodir )
     from pyris import segment_all
     title = 'Running image segmentation over the external directory: %s' % cf.get( 'Data', 'input' )
     print; print title; print '-'*len(title)
@@ -123,7 +138,27 @@ if args.segmentation:
 # Skeletonize and Extract Centerline
 # ----------------------------------
 if args.axis:
+    if not os.path.isdir( axisdir ): os.makedirs( axisdir )
+    if args.mask_dir is not None: maskdir = args.mask_dir
     from pyris import vectorize_all
     title = 'Extracting centerlines for masks in internal directory: %s' % cf.get( 'Data', 'output' )
     print; print title; print '-'*len(title)
-    vectorize_all( geodir, maskdir, cf, axisdir )
+    vectorize_all( geodir, maskdir, cf, axisdir, use_geo=(not args.no_geo) )
+
+# Centerline Migration Rates
+# --------------------------
+if args.migration:
+    if not os.path.isdir( migdir ): os.makedirs( migdir )
+    from pyris import migration_rates
+    if args.axis_files is None and args.config is not None:
+        title = 'Computing migration rates from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
+        print; print title; print '-'*len(title)
+        axisfiles = [ os.path.join( axisdir, f ) for f in sorted( os.listdir( axisdir ) ) ]
+        migration_rates( axisfiles, migdir, columns=(2,3),
+                         filter_multiplier=eval(cf.get( 'Migration', 'bend_separation_filter_reduction' )) )
+    else:
+        if not os.path.isdir( args.output_dir ): os.makedirs( args.output_dir )
+        title = 'Computing migration rates from files: %s' % args.axis_files
+        print; print title; print '-'*len(title)
+        migration_rates( args.axis_files, args.output_dir, columns=args.axis_columns, filter_multiplier=args.filter_multiplier )
+

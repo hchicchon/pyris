@@ -1,8 +1,6 @@
 from __future__ import division
 import numpy as np
 from skimage import morphology as mm
-from ..misc import BW, isBW
-
 
 def CleanIslands( bw, size, conn=1 ):
     '''CleanIslands( bw, size, conn=1 ) - Remove Islands inside channel'''

@@ -1,22 +1,13 @@
 from __future__ import division
 import os, sys
-from ..misc import isRGB, BW, LoadLandsatData
-from .morphology import RemoveSmallObjects, CleanIslands
 import numpy as np
-from scipy import ndimage
 from skimage.filter import threshold_otsu, rank
 from skimage import morphology as mm
 from skimage.util import img_as_ubyte
-from matplotlib import pyplot as plt
-import warnings
-import pickle
+
 
 def Thresholding( rgb, band=None ):
     '''Thresholding(rgb) - Apply Otsu's Thresholding Method'''
-    # Check rgb image
-    if not isRGB( rgb ):
-        raise TypeError, \
-          'Input must be an RGB image'
     # Assign band
     if band is None: idx = 0 # Defaut band is R
     elif isinstance(band, str):
@@ -27,7 +18,7 @@ def Thresholding( rgb, band=None ):
     img = rgb[:,:,idx] # Band Index
     thresh = threshold_otsu( img ) # Compute Otsu's Threshold
     bw = img < thresh # Apply Threshold
-    return BW( bw )
+    return bw
 
 
 def SegmentationIndex( *args, **kwargs ):
@@ -56,10 +47,10 @@ def SegmentationIndex( *args, **kwargs ):
     # Apply Local Otsu's Method
     globthresh = threshold_otsu( IDX[np.isfinite(IDX)] )
     if method == 'local':
-        print "   Local Otsu's Method - This may require some time..."
+        print "applying local Otsu method - this may require some time... \r", 
         selem = mm.disk( rad )
         thresh = rank.otsu( img_as_ubyte(IDX), selem )
-        print '   ...done'
+        print 'done'
     else:
         thresh = globthresh
     if index == 'NDVI': MASK = img_as_ubyte(IDX) <= thresh

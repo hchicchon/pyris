@@ -58,15 +58,28 @@ class GeoReference( object ):
     def __init__( self, I, GeoTransf ):
         self.I = I
         self.GeoTransf = GeoTransf
+        self.RefImage()
+        return None
 
     def RefImage( self ):
-        XX = np.arange( 1, self.I.T.shape[0]+1 ) * self.GeoTransf['PixelSize'] + self.GeoTransf['X']
-        YY = (np.arange(1, self.I.T.shape[1]+1 )-self.I.T.shape[1]) * self.GeoTransf['PixelSize'] + self.GeoTransf['Y']
-        return XX, YY
+        self.Ix, self.Iy = np.arange( self.I.T.shape[0] ), np.arange( self.I.T.shape[1] )
+        self.IX = (self.Ix+1) * self.GeoTransf['PixelSize'] + self.GeoTransf['X']
+        self.IY = ( (self.Iy+1) - self.Iy[-1] ) * self.GeoTransf['PixelSize'] + self.GeoTransf['Y']
+        self.extent = [ self.IX[0], self.IX[-1], self.IY[0], self.IY[-1] ]
+        return self.IX, self.IY
 
-    def RefCurve( self, X, Y ):
-        XX, YY = self.RefImage()
-        return X*self.GeoTransf['PixelSize']+XX[0], Y*self.GeoTransf['PixelSize']+YY[0]
+    def RefCurve( self, X, Y, inverse=False ):
+        if inverse:
+            self.CX, self.CY = X, Y
+            self.Cx = ( self.CX - self.IX[0] ) / self.GeoTransf['PixelSize']
+            self.Cy = ( self.CY - self.IY[0] ) / self.GeoTransf['PixelSize']
+            return self.Cx, self.Cy
+        else:
+            self.Cx, self.Cy = X, Y
+            self.CX = X*self.GeoTransf['PixelSize'] + self.IX[0]
+            self.CY = Y*self.GeoTransf['PixelSize'] + self.IY[0]
+            return self.CX, self.CY
+
 
 
 def get_dt( name1, name2 ):
@@ -139,47 +152,6 @@ def PolygonCentroid( x, y, return_area=False ):
         return X, A
     return X
 
-def PlotWavelet(time, sig, icwt, cwt, period):
-    levels = [0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16]
-    plt.figure()
-    gs = gridspec.GridSpec( 100, 100 )
-    power = (np.abs(cwt)) ** 2  # compute wavelet power spectrum
-    global_ws = np.mean(power, axis=1) * sig.var()/sig.size
-    smax = period[ global_ws.argmax() ]    
-    ax1 = plt.subplot( gs[:30,    :70] ) # Signal
-    ax2 = plt.subplot( gs[35:85,  :70], sharex=ax1 ) # CWT Power
-    ax3 = plt.subplot( gs[35:85:, 75:], sharey=ax2 ) # GWS
-    ax4 = plt.subplot( gs[95:,    :70]  ) # cbar    
-    ax1.plot( time, sig, 'k', label='original' )
-    ax1.plot( time, icwt, 'r', label='filtered', lw=2 )
-    ax1.set_ylabel( r'$\mathcal{C}(s)$' )
-    ax1.legend( loc='best' )
-    ax3.plot(global_ws, period)
-    CF = ax2.contourf( time, period, np.log2(power), 50, cmap=plt.cm.Spectral )
-    ax2.axhline( y=smax, c='gray', lw=2, linestyle='--' )
-    ax2.set_ylabel(r'Period $[km]$')
-    ax2.set_xlabel(r'$s [km]$')
-    ax2.set_yscale('log', basey=2, subsy=None)
-    ax2.yaxis.set_major_formatter(mpl.ticker.ScalarFormatter())
-    ax2.ticklabel_format(axis='y', style='plain')
-    ax2.invert_yaxis()
-    ax3.hold(True)
-    ax3.set_xlabel('GWS')
-    ax3.set_yscale('log', basey=2, subsy=None)
-    ax3.yaxis.set_major_formatter(mpl.ticker.ScalarFormatter())
-    ax3.ticklabel_format(axis='y', style='plain')
-    cbar = plt.colorbar( CF, orientation='horizontal', cax=ax4 )
-    cbar.set_label( r'$\log_2(\mathrm{Power})$' )
-    xx = ax2.get_yticks()
-    ll = [ '%.1f' % a for a in xx ]
-    ax2.set_yticks( xx, ll )
-    xx = ax3.get_yticks()
-    ll = [ '%.1f' % a for a in xx ]
-    plt.setp( ax1.get_xticklabels(), visible=False )
-    plt.setp( ax3.get_yticklabels(), visible=False )
-    plt.axis('tight')
-    plt.show()
-
 
 def LoadLandsatData( dirname ):
     '''Load Relevant Bands for the Current Landsat Data'''
@@ -199,27 +171,6 @@ def LoadLandsatData( dirname ):
         'Ly' : bands[0].shape[1]
         }
     return bands, GeoTransf
-
-
-
-def isRaster( img ):
-    if isinstance( img, np.ndarray ) :
-        if img.ndim == 2:
-            return True
-    return False
-
-
-def isRGB( img ):
-    if isinstance( img, np.ndarray ) :
-        if img.ndim == 3 and img.shape[2] == 3:
-            return True
-    return False
-
-
-def isBW( img ):
-    if isRaster( img ) and np.allclose( [0.,1.], np.unique( img ) ):
-        return True
-    return False
 
 
 class MaskedShow( object ):
@@ -316,7 +267,6 @@ class interactive_mask( object ):
     def __init__( self, path ):
         self.path = os.path.normpath( path )
         self.name =  self.path.split( os.sep )[-1]
-        self.real_color = self.build_real_color()
 
     def build_real_color( self ):
         if self.name.startswith( 'LC8' ):
@@ -327,12 +277,13 @@ class interactive_mask( object ):
         B1, B2, B3 = map( imread, [ os.path.join( self.path, '_'.join((self.name,bname))+'.TIF' ) for bname in [ b1, b2, b3 ] ] )
         return np.dstack( ( B1, B2, B3 ) )
 
-    def __call__( self ):
+    def _set_mask( self ):
+        real_color = self.build_real_color()
         white_masks = []
         plt.ioff()
         fig = plt.figure()
-        plt.title( 'Press-drag a rectangle for your white mask. Close when you are finish.' )
-        plt.imshow( self.real_color )
+        plt.title( 'Press-drag a rectangle for your mask. Close when you are finish.' )
+        plt.imshow( real_color )
         plt.axis('equal')
         x_press = None
         y_press = None
@@ -352,7 +303,7 @@ class interactive_mask( object ):
                   else (y_release, y_press+1)
                 print( "The mask you selected is [{0}:{1},{2}:{3}]".format(
                     xs, xe, ys, ye) )
-                white_masks.append( ( slice(ys, ye), slice(xs, xe) ) )
+                white_masks.append( [ ys, ye, xs, xe ] )
                 plt.fill( [xs,xe,xe,xs,xs], [ys,ys,ye,ye,ys], 'r', alpha=0.25 )
                 event.canvas.draw()
             x_press = None
@@ -361,6 +312,44 @@ class interactive_mask( object ):
         cid_release = fig.canvas.mpl_connect('button_release_event', onrelease)
         plt.show()
         return white_masks
+
+    def get_georef( self ):
+        B1 = os.path.join( self.path, '_'.join((self.name, 'B1'))+'.TIF' )
+        geo = gdal.Open( B1 )
+        GeoTransf = {    
+            'PixelSize' : abs( geo.GetGeoTransform()[1] ),
+            'X' : geo.GetGeoTransform()[0],
+            'Y' : geo.GetGeoTransform()[3],
+            'Lx' : geo.ReadAsArray().shape[0],
+            'Ly' : geo.ReadAsArray().shape[1]
+            }
+        return GeoReference( geo.ReadAsArray(), GeoTransf )
+
+    def _georeference_masks( self, masks, inverse=False ):
+        GRF = self.get_georef()
+        gmask = []
+        for mask in masks:
+            [ys, ye, xs, xe] = mask
+            X, Y = GRF.RefCurve( np.array([xs,xe]), np.array([ys,ye]), inverse=inverse )
+            gmask.append( [ Y[0], Y[1], X[0], X[1] ] )
+        return gmask
+    
+    def georeference( self, masks ):
+        gmasks = self._georeference_masks( masks )
+        return gmasks
+
+    def dereference( self, gmasks ):
+        masks = self._georeference_masks( gmasks, inverse=True )
+        return masks
+
+    def __call__( self, *args, **kwargs ):
+        inverse = kwargs.pop( 'inverse', False )
+        if inverse:
+            gmasks = list( sys.argv[1] )
+            return self.dereference( gmasks )
+        masks = self._set_mask()
+        return self.georeference( masks )
+
 
 def ShowRasterData( data, label='', title='' ):
     '''Return a GridSpec Instance with Raster imshow,

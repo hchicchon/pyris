@@ -20,22 +20,17 @@ class AxisReader( object ):
 
     def __init__( self, I, first_point=None, start_from=None, method='width', verbose=True, call_depth=0, jidx=[] ):
         '''Constructor'''
-
-        # Skeleton
         self.I = I
-        self.I[0,:] = 0
-        self.I[:,0] = 0
-        self.I[-1,:] = 0
-        self.I[:,-1] = 0
-        self.hits = np.where( I>0, 1, 0 ).astype( int ) # Hit & Miss Matrix
+        self.hits = np.where( I>0, 1, 0 ).astype( int )
         self.first_point = first_point # Initial Point if known (used in recursion)
         self.start_from = 'b' if start_from is None else start_from # Where flow comes from
         self.method = method # Method used for multithread reaches
         self.verbose = verbose
         self.call_depth = call_depth # Level of recursion
         self.jidx = jidx # Indexes of multothread junctions
-        [ xl, yl, xr, yr ] = [ int(b) for b in regionprops( self.hits )[0].bbox ]
+        [ xl, yl, xr, yr ] = [ int(b) for b in regionprops( self.I.astype(int) )[0].bbox ]
         self.Lmin = int( min( abs(xr-xl), abs(yr-yl) ) ) # Maximum cartesian size of the channel in pixels
+        return None
 
     def GetJunction( self, idx ):
         '''List of multithread junctions indexes'''
@@ -81,7 +76,7 @@ class AxisReader( object ):
                                 self.i0, self.j0 = i, j
                                 return None
 
-        elif self.start_from == 'r':
+        elif self.start_from == 'l':
             for j in xrange( 1, self.hits.shape[1] ):
                 if np.all( self.hits[:,j] == 0 ): continue
                 for i in xrange( 1, self.hits.shape[0]-1 ):
@@ -92,7 +87,7 @@ class AxisReader( object ):
                                 self.i0, self.j0 = i, j
                                 return None
 
-        elif self.start_from == 'l':
+        elif self.start_from == 'r':
             for j in xrange( self.hits.shape[1]-1, 0, -1 ):
                 if np.all( self.hits[:,j] == 0 ): continue
                 for i in xrange( 1, self.hits.shape[0]-1 ):
@@ -172,29 +167,32 @@ class AxisReader( object ):
                     axijs = []
 
                     for ij in xrange( len(pos) ):
+
                         # For each of the Junctions is created a recursive instance
                         first_point = ( pos[ij][0]+i0-1, pos[ij][1]+j0-1 ) # Initial Point of the Local Branch
+
                          # Temporally remove other branches
                         removed_indexes = [ ij-1, (ij+1)%len(pos) ]
                         for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 0
-                        # Set the maximum number of iteration
-                        if self.method == 'fast': ITER = self.Lmin
-                        else: ITER = MAXITER                        
 
                         # Recursive call
                         axr = AxisReader( self.I*self.hits, first_point=first_point, method=self.method,
                                           call_depth=self.call_depth+1, jidx=self.jidx )
-                        axij = axr( MAXITER=ITER )
+                        axij = axr( MAXITER=MAXITER )
 
                         # Set back the other branches
                         for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 1
 
-                        axijs.append( axij )
-                        jncsl[ij] = axij[2].size # Total Path Length
-                        jncsw[ij] = axij[2].mean() # Total Path Average Width
-                        rdepths[ij] = axr.call_depth # Total Level of Recursion of Class Instance
+                        axijs.append( axij ) # List of recursive AxisReader instances
+                        jncsl[ij] = axij[2].size # Total path length
+                        jncsw[ij] = axij[2].mean() # Total path average width
+                        rdepths[ij] = axr.call_depth # Total level of recursion
 
-                    if self.method == 'std':
+                    if self.method == 'length':
+                        IDX = jncsl.argmax()
+                    if self.method == 'width':
+                        IDX = jncsw.argmax()
+                    elif self.method == 'std':
                         # Length Control
                         for ij in xrange( len(pos) ):
                             jmin = jncsl.argmin()
@@ -205,50 +203,23 @@ class AxisReader( object ):
                                 jncsl = np.delete( jncsl, jmin )
                                 jncsw = np.delete( jncsw, jmin )
                                 rdepths = np.delete( rdepths, jmin )
-                        # Take the Widest between the remaining branches
-                        _J, _I, _ = axijs[ jncsw.argmax() ] # Widest Branch
-                        self.call_depth = rdepths[ jncsw.argmax() ]
-                        I.extend( _I ), J.extend( _J )
-                        del axijs, axij, axr # Free some Memory
-                        break
-
-                    elif self.method == 'fast':
-                        if np.all( jncsl ) < ITER: # Planform is finished
-                            _J, _I, _ = axijs[ jncsw.argmax() ] # Take the widest branch
-                            self.call_depth = rdepths[ jncsw.argmax() ]
-                            I.extend( _I ), J.extend( _J )
-                            del axijs, axij, axr # Free some memory
-                            break
-                        elif np.any( jncsl ) < MAXITER: # Some of the branches are shorter
-                            idxs_to_rm = []
-                            # Look for the short branches
-                            for idx in xrange( len( pos ) ):
-                                if jncsl[idx] < ITER:
-                                    self.hits[ axijs[idx][1][0], axijs[idx][0][0] ] = 0
-                                    idxs_to_rm.append( idx )
-                            # Remove the short branches
-                            axijs = [ _i for _j, _i in enumerate(axijs) if not _j in idxs_to_rm ]
-                            jncsl = np.delete( jncsl, idxs_to_rm )
-                            jncsw = np.delete( jncsw, idxs_to_rm )
-                            rdepths = np.delete( rdepths, idxs_to_rm )
-                        # Remove from Hit&Miss the main branch
-                        self.hits[ axijs[jncsw.argmax()][1], axijs[jncsw.argmax()][0] ] = 0
-                        # Now append
-                        _J, _I, _ = axijs[ jncsw.argmax() ] # Take the widest branch
-                        self.call_depth = rdepths[ jncsw.argmax() ]
-                        I.extend( _I ), J.extend( _J )
-                        del axijs, axij, axr # Free some memory
-                        continue
-
+                        IDX = jncsw.argmax()
                     else:
-                        raise ValueError, 'method %s not known. Must be either "std" or "fast"' % self.method
+                        raise ValueError, 'method %s not known. Must be either "std", "length" or "width"' % self.method
+
+                    # Take the Widest between the remaining branches
+                    _J, _I, _ = axijs[ IDX ]
+                    self.call_depth = rdepths[ IDX ]
+                    I.extend( _I ), J.extend( _J )
+                    del axijs, axij, axr # Free some Memory
+                    break
+
 
         if ITER == MAXITER-1 and not self.method == 'fast':
             print 'WARNING: Maximum number of iteration reached in axis extraction!'
-        Xpx, Ypx = np.asarray( I ), np.asarray( J )
-        Bpx = self.I[I, J]
-        # TODO: check code - For some reason they are inverted
-        return [ Ypx, Xpx, Bpx ]
+        I, J = np.asarray( I ), np.asarray( J )
+        B = self.I[I, J]
+        return [ J, I, B ]
 
     def __call__( self, MAXITER=100000 ):
         self.GetFirstPoint()
@@ -257,7 +228,7 @@ class AxisReader( object ):
                 
 
 
-def ReadAxisLine( I, flow_from=None, method='std' ):
+def ReadAxisLine( I, flow_from=None, method='std', MAXITER=100000 ):
 
     '''
     Convenience function for AxisReader class.
@@ -273,7 +244,7 @@ def ReadAxisLine( I, flow_from=None, method='std' ):
     '''
     
     r = AxisReader( I, start_from=flow_from, method=method )
-    [ Xpx, Ypx, Bpx ] = r()
+    [ Xpx, Ypx, Bpx ] = r( MAXITER=MAXITER )
     print 'axis read with a recursion level of %s' % r.call_depth
     
     # Pixelled Line

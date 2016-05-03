@@ -2,7 +2,6 @@ from __future__ import division
 import numpy as np
 from numpy.lib import stride_tricks
 from skimage.measure import regionprops
-from ..misc import isRaster
 
 class Pruner( object ):
     '''

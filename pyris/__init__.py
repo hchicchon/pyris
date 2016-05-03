@@ -14,6 +14,7 @@ PyRIS :: Python - RIvers from Satellite
 '''
 
 # Imports
+from __future__ import division
 import os, sys
 import numpy as np
 import pickle
@@ -50,7 +51,7 @@ __all__ = [
     # vector
     'AxisReader', 'ReadAxisLine',
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
-    'MigRateBend', 'LoadLandsatData',
+    'AxisMigration', 'LoadLandsatData',
     ]
 
 # Check if correct version of MLPY is installed
@@ -77,6 +78,26 @@ def show(I):
     plt.imshow(I, cmap='spectral', interpolation='none')
     plt.colorbar()
     plt.show()
+
+def load( fname, *args, **kwargs ):
+    ext = os.path.splitext( fname )[-1]
+    if ext == '.txt':
+        return np.loadtxt( fname, *args, **kwargs )
+    elif ext == '.npy':
+        return np.load( fname, *args, **kwargs )
+    else:
+        e = 'Format %s not supported for file %s. Use either "npy" or "txt"' % ( ext, fname )
+        raise TypeError, e
+
+def save( fname, *args, **kwargs ):
+    ext = os.path.splitext( fname )[-1]
+    if ext == '.txt':
+        return np.savetxt( fname, *args, **kwargs )
+    elif ext == '.npy':
+        return np.save( fname, *args, **kwargs )
+    else:
+        e = 'Format %s not supported for file %s. Use either "npy" or "txt"' % ( ext, fname )
+        raise TypeError, e
 
 # =====================
 # Main Script Functions
@@ -113,15 +134,24 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
 
         bands, GeoTransf = LoadLandsatData( landsat )
 
+        # GeoReferencing of White and Black masks
+        bw_masks_georef = GeoReference( bands[0], GeoTransf )
+
         # Apply White Mask
         white = np.zeros( bands[0].shape, dtype=int )
-        for s in eval( config.get( 'Segmentation', 'white_masks' ) ):
-            white[ s[0], s[1] ] = 1
+        white_masks = eval( config.get( 'Segmentation', 'white_masks' ) )
+        for s in white_masks:
+            xx, yy = bw_masks_georef.RefCurve( np.asarray(s[2:]), np.asarray(s[:2]), inverse=True )
+            sx, sy = slice( int(xx[0]), int(xx[1]) ), slice( int(yy[0]), int(yy[1]) )
+            white[ sy, sx ] = 1
 
         # Apply Black Mask
         black = np.ones( bands[0].shape, dtype=int )
-        for s in eval( config.get( 'Segmentation', 'black_masks' ) ):
-            black[ s[0], s[1] ] = 0
+        black_masks = eval( config.get( 'Segmentation', 'black_masks' ) )
+        for s in black_masks:
+            xx, yy = bw_masks_georef.RefCurve( np.asarray(s[2:]), np.asarray(s[:2]), inverse=True )
+            sx, sy = slice( int(xx[0]), int(xx[1]) ), slice( int(yy[0]), int(yy[1]) )
+            black[ sy, sx ] = 0
 
         # Mark Landsat NoData
         nanmask = np.where( bands[0]==0, 1, 0 )
@@ -161,7 +191,7 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
             plt.figure()
             plt.imshow( mask_lab, cmap=plt.cm.spectral, interpolation='none' )
             plt.title( 'Indentify the label(s) corresponding to the river planform.' )
-            for ifeat in xrange(1,num_features+1):
+            for ifeat in xrange( 1, num_features+1 ):
                 c0 = np.column_stack( np.where( mask_lab==ifeat ) )[0]
                 plt.text( c0[1], c0[0], '%s' % ifeat, fontsize=30, bbox=dict( facecolor='white' ) )
             plt.show()
@@ -170,33 +200,46 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
             for ilab, lab in enumerate( labs ): mask += np.where( mask_lab==int(lab), ilab+1, 0 )
         else:
             # The larger element in the image will be used.
-            warnings.warn('automated labels may lead to errors! please check your results!')
-            if auto_label == 'auto': # FIXME: use MNDWI threshold to define which labels to use
-                if eval( config.get( 'Segmentation', 'white_masks' ) ) == []:
-                    auto_label = 'max'
+            warnings.warn( 'automated labels may lead to erroneous planforms! please check your results!' )
+            if auto_label == 'auto':
+                # If NDVI was used to extract the mask, combine it with MNDWI
+                if config.get('Segmentation', 'method') == 'NDVI' and num_features > 1:
+                    _, mndwi, _ = SegmentationIndex( R=R, G=G, B=B, MIR=MIR, index='MNDWI', method='global' )
+                    for ifeat in xrange( 1, num_features+1 ):
+                        # If less than 25% of the label is water, ignore the label
+                        if ( ((mndwi*mask_lab)==ifeat).sum() / (mask_lab==ifeat).sum() ) < 0.25:
+                            mask_lab[ mask_lab==ifeat ] = 0
+                    mask *= 0
+                    for ilab, lab in enumerate( np.unique(mask_lab[mask_lab>0]) ): mask[ mask_lab==int(lab) ] = ilab+1
                 else:
-                    auto_label = 'all'
+                    # otherwise, just use either all the features or the largest one
+                    # depending whether the planform was isolated or not
+                    if eval( config.get( 'Segmentation', 'white_masks' ) ) == []:
+                        auto_label = 'max'
+                    else:
+                        auto_label = 'all'
             if auto_label == 'all':
                 mask = mask_lab
             elif auto_label == 'max':
                 labs, counts = np.unique( mask_lab[mask_lab>0], return_counts=True )
                 mask = mask_lab==labs[ counts.argmax() ]
+            elif auto_label == 'auto':
+                pass
             else:
-                e = "labelling method '%s' not known. choose either 'auto', 'max', 'all' or None"
+                e = "labelling method '%s' not known. choose either 'auto', 'max', 'all' or None" % auto_label
                 raise ValueError, e
-
         print 'saving  mask and GeoTransf data...'
         np.save( maskfile, mask )
         with open( geofile, 'w' ) as gf: pickle.dump( GeoTransf, gf )
     return None
 
 
-def vectorize_all( geodir, maskdir, config, axisdir ):
+def vectorize_all( geodir, maskdir, config, axisdir, use_geo=True ):
 
     maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
-    geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
+    if use_geo: geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
 
-    for ifile, (maskfile, geofile) in enumerate( zip( maskfiles, geofiles ) ):
+    for ifile, maskfile in enumerate( maskfiles ):
         # input
         name = os.path.splitext( os.path.basename( maskfile ) )[0]
         # output
@@ -210,9 +253,10 @@ def vectorize_all( geodir, maskdir, config, axisdir ):
         print 'Processing file %s' % ( maskfile )
 
         # Load mask and GeoFile
-        GeoTransf = pickle.load( open( geofile ) )
+        if use_geo: GeoTransf = pickle.load( open( geofiles[ifile] ) )
         mask = np.load( maskfile ).astype( int )
         num_features = mask.max()
+
         # Skeletonization
         print 'skeletonizing...'
         skel, dist = Skeletonize( np.where(mask>0,1,0).astype( int ) ) # Compute Axis and Distance
@@ -232,17 +276,9 @@ def vectorize_all( geodir, maskdir, config, axisdir ):
             print 'extracting label %d...' % lab
             pdist = dist*(pruned==lab)
             curr_axis = ReadAxisLine( pdist, flow_from=config.get('Data', 'flow_from'),
-                                      method=config.get('Axis', 'reconstruction_method') )
+                                      method=config.get('Axis', 'reconstruction_method'),
+                                      MAXITER=int(config.get('Axis', 'maxiter')) )
             axis.join( curr_axis )
-
-            plt.figure()
-            plt.imshow(mask, cmap='spectral', interpolation='none')
-            plt.plot(curr_axis.x, curr_axis.y, 'r', lw=2)
-            plt.show()
-        plt.figure()
-        plt.imshow(mask, cmap='spectral', interpolation='none')
-        plt.plot(axis.x, axis.y, 'r', lw=2)
-        plt.show()
 
         # Interpolation
         print 'parametric cublic spline interpolation of the centerline...'
@@ -261,11 +297,29 @@ def vectorize_all( geodir, maskdir, config, axisdir ):
         for ifilter in xrange(10): Bp_PCS[1:-1] = 0.25 * ( Bp_PCS[:-2] + 2*Bp_PCS[1:-1] + Bp_PCS[2:] ) # Filter channel width
        
         # GeoReferenced PCS
-        s_PCS, theta_PCS, Cs_PCS, B_PCS = \
-            sp_PCS*GeoTransf['PixelSize'], thetap_PCS, Csp_PCS/GeoTransf['PixelSize'], Bp_PCS*GeoTransf['PixelSize']
-        GR = GeoReference( pruned, GeoTransf )
-        x_PCS, y_PCS = GR.RefCurve( xp_PCS, yp_PCS )
+        if use_geo:
+            s_PCS, theta_PCS, Cs_PCS, B_PCS = \
+                sp_PCS*GeoTransf['PixelSize'], thetap_PCS, Csp_PCS/GeoTransf['PixelSize'], Bp_PCS*GeoTransf['PixelSize']
+            GR = GeoReference( pruned, GeoTransf )
+            x_PCS, y_PCS = GR.RefCurve( xp_PCS, yp_PCS )
+        else:
+            x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS = xp_PCS, yp_PCS, sp_PCS, thetap_PCS, Csp_PCS, Bp_PCS
 
         # Save Axis Properties
         print 'saving main channel data...'
         np.save( axisfile, ( xp_PCS, yp_PCS, x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS ) )
+
+
+def migration_rates( axisfiles, migdir, columns=(0,1), filter_multiplier=0.33 ):
+    
+    migfiles = [ os.path.join( migdir, os.path.basename( axisfile ) ) for axisfile in axisfiles ]
+    X, Y = [], []
+    for axisfile in axisfiles:
+        axis = load( axisfile )
+        x, y = axis[ columns[0] ], axis[ columns[1] ]
+        X.append( x ), Y.append( y )
+    migrations = AxisMigration( X, Y )( filter_reduction=filter_multiplier )
+    for i, migfile in enumerate( migfiles ):
+        [ dx, dy, dz, ICWTC, BI, B12, BUD ] = [ m[i] for m in migrations ]
+        data = np.vstack( (dx, dy, dz, ICWTC, BI, B12, BUD) )
+        save( migfile, data )

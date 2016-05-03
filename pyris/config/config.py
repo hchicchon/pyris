@@ -35,6 +35,7 @@ def default_config():
 
     cf.add_section( 'Axis' )
     cf.set( 'Axis', 'reconstruction_method', 'std' )
+    cf.set( 'Axis', 'maxiter', 100000 )
 
     cf.add_section( 'Migration' )
     cf.set( 'Migration', 'bend_separation_filter_reduction', 0.33 )
