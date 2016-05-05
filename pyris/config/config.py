@@ -24,7 +24,6 @@ def default_config():
     cf.set( 'Data', 'channel_width', None )
 
     cf.add_section( 'Segmentation' )
-    cf.set( 'Segmentation', 'black_mask_slices', [] )
     cf.set( 'Segmentation', 'method', 'NDVI' )
     cf.set( 'Segmentation', 'thresholding', 'global' )
     cf.set( 'Segmentation', 'white_masks', [] )
@@ -38,7 +37,9 @@ def default_config():
     cf.set( 'Axis', 'maxiter', 100000 )
 
     cf.add_section( 'Migration' )
-    cf.set( 'Migration', 'bend_separation_filter_reduction', 0.33 )
+    cf.set( 'Migration', 'method', 'distance' )
+    cf.set( 'Migration', 'use_wavelets', False )
+    cf.set( 'Migration', 'bend_separation_filter_reduction', 0.5 )
 
     return cf
 

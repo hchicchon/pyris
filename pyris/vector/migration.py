@@ -7,6 +7,7 @@ from .interpolation import InterpPCS
 if HAS_MLPY: from .. import wave
 import matplotlib.pyplot as plt
 
+
 class AxisMigration( object ):
 
     '''
@@ -24,7 +25,7 @@ class AxisMigration( object ):
     dy = [] # Local y Migration Rate
     dz = [] # Local Migration Rate Magnitude
     
-    def __init__( self, Xseries, Yseries ):
+    def __init__( self, Xseries, Yseries, method='distance', use_wavelets=False ):
         '''Constructor - Get Planforms'''
         self.data = []
         for x, y in zip( Xseries, Yseries ):
@@ -35,6 +36,8 @@ class AxisMigration( object ):
             s = np.cumsum( ds )
             c = -np.gradient( np.arctan2( dy, dx ), np.gradient(s) )
             self.data.append( { 'x': x, 'y': y, 's': s, 'c':c } )
+        self.method = method
+        self.use_wavelets = use_wavelets
         return None
 
     def IterData( self ):
@@ -76,21 +79,33 @@ class AxisMigration( object ):
         reduction = kwargs.pop( 'reduction', 0.33 )
         full_output = kwargs.pop( 'full_output', False )
 
-        N = sgnl.size
-        dt = time[1] - time[0]
-        omega0 = self.omega0
-        scales = wave.autoscales( N=N, dt=dt, dj=0.1, wf='morlet', p=omega0 )
-        cwt = wave.cwt( x=sgnl, dt=dt, scales=scales, wf='morlet', p=omega0 )
-        gws = (np.abs(cwt)**2).sum( axis=1 ) / N
-        peaks = np.full( gws.size, np.nan )
-        peaks[1:-1] = np.where( np.logical_and(gws[1:-1]>gws[2:],gws[1:-1]>gws[:-2]), gws[1:-1], np.nan )
-        for i in xrange( (~np.isnan(peaks)).astype(int).sum() ):
-            p = np.nanargmax( peaks )
-            peaks[p] = np.nan
-            scalemax = scales[ p ] # Fundamental Harmonic
-            mask = ( scales >= reduction*scalemax )
-            icwt = wave.icwt( cwt[mask, :], dt, scales[mask], wf='morlet', p=omega0 )
-            if not np.allclose(icwt, 0): break
+        if self.use_wavelets:
+            if not HAS_MLPY:
+                raise ImportError,\
+                    'Package mlpy>=2.5.0 was not installed\n'\
+                    'Run with "use_wavelets" set to False'
+            N = sgnl.size
+            dt = time[1] - time[0]
+            omega0 = self.omega0
+            scales = wave.autoscales( N=N, dt=dt, dj=0.1, wf='morlet', p=omega0 )
+            cwt = wave.cwt( x=sgnl, dt=dt, scales=scales, wf='morlet', p=omega0 )
+            gws = (np.abs(cwt)**2).sum( axis=1 ) / N
+            peaks = np.full( gws.size, np.nan )
+            peaks[1:-1] = np.where( np.logical_and(gws[1:-1]>gws[2:],gws[1:-1]>gws[:-2]), gws[1:-1], np.nan )
+            for i in xrange( (~np.isnan(peaks)).astype(int).sum() ):
+                p = np.nanargmax( peaks )
+                peaks[p] = np.nan
+                scalemax = scales[ p ] # Fundamental Harmonic
+                mask = ( scales >= reduction*scalemax )
+                icwt = wave.icwt( cwt[mask, :], dt, scales[mask], wf='morlet', p=omega0 )
+                if not np.allclose(icwt, 0): break
+        else:
+            scales, scalemax = None, None
+            icwt = sgnl
+            for i in xrange( int(sgnl.size) ):
+                sgnl[1:-1] = ( sgnl[:-2] + 2*sgnl[1:-1] + sgnl[2:] ) / 4
+                sgnl[0] = ( 2*sgnl[0] + sgnl[1] ) / 3
+                sgnl[-1] = ( 2*sgnl[-1] + sgnl[-2] ) / 3
         if full_output: return icwt, scales, scalemax
         return icwt
         
@@ -98,11 +113,24 @@ class AxisMigration( object ):
         '''Compute 0-crossings of channel curvature'''
         return np.where( Cs[1:]*Cs[:-1] < 0 )[0]
 
+    def DistanceInflections( self, data, prev_data, prev_I ):
+        '''Compute Inflection points by moving orthogonally from previous inflection points'''
+        I = []
+        for prev_i in prev_I:
+            i = self.FindOrthogonalPoint( data, prev_data, prev_i )
+            if i is not None:
+                I.append( i )                
+        return np.asarray( I )
+            
+
     def GetAllInflections( self ):
         '''Get Inflection points on Inverse Wavelet Transform for Curvature.'''
         self.I = []
         for i, d in self.IterData():
-            self.I.append( self.GetInflections( self.icwtC[i] ) )
+            if i == 0 or self.method == 'curvature':
+                self.I.append( self.GetInflections( self.icwtC[i] ) )
+            elif i > 0 and self.method == 'distance':
+                self.I.append( np.sort(self.DistanceInflections( d, self.data[i-1], self.I[i-1] )) )
         return None
 
     def CorrelateInflections( self, *args, **kwargs ):
@@ -111,47 +139,66 @@ class AxisMigration( object ):
         self.CI1 = [] # Points on the Current Planform
         self.CI12 = [] # Points to which the First Planform Points Converge to the Second Planform
         self.CI11 = [] # Points where the second planform converges into itself to get in the next one (some bends become one bend)
-        C1 = self.I[0] # Initial Reference Planform
-        # Go Forward
-        for i, (d1, d2) in self.IterData2():
-            self.CI11.append( C1 )
-            C2 = self.I[i+1]
-            C12 = np.zeros_like( C1, dtype=int )
+
+        if self.method == 'distance':
+            for i, (d1, d2) in self.IterData2():
+                self.CI1.append( self.I[i] )
+                self.CI12.append( self.I[i+1] )
+                self.CI11.append( self.I[i+1] )
             x1, y1 = d1['x'], d1['y']
             x2, y2 = d2['x'], d2['y']
-            Cs1 = self.icwtC[i]
-            Cs2 = self.icwtC[i+1]
-            for ipoint, Ipoint in enumerate( C1 ):
-                xi1, yi1 = x1[Ipoint], y1[Ipoint]
-                #xC2, yC2 = x2[C2], y2[C2] # Do not care about sign
-                xC2 = np.where( Cs2[C2+1]*Cs1[Ipoint+1]<0, np.nan, x2[C2] ) # Take real curvature sign
-                yC2 = np.where( Cs2[C2+1]*Cs1[Ipoint+1]<0, np.nan, y2[C2] ) # Take real curvature sign
-                # Find the Closest
-                C12[ipoint] = C2[ np.nanargmin( np.sqrt( (xC2-xi1)**2 + (yC2-yi1)**2 ) ) ]
-            # There are some duplicated points - we need to get rid of them
-            unique, counts = np.unique(C12, return_counts=True)
-            duplic = unique[ counts>1 ]
-            cduplic = counts[ counts > 1 ]
-            for idup, (dup, cdup) in enumerate( zip( duplic, cduplic ) ):
-                idxs = np.where( C12==dup )[0]
-                idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) )
-                idxs = np.delete( idxs, idx )
-                C1 = np.delete( C1, idxs )
-                C12 = np.delete( C12, idxs )
-
-            # Sometimes inflections are messed up. Sort them out!
-            C1.sort()
-            C12.sort()
-
-            # Plot for Cutoff-to-NewBend Inflection Correlation (for DEBUG purposes only)
-            #plt.figure()
-            #plt.plot( x1, y1, 'k' )
-            #plt.plot( x2, y2, 'r' )
-            #plt.plot( x1[C1], y1[C1], 'ko' )
-            #plt.plot( x2[C12], y2[C12], 'ro' )
-            #for i in xrange(C1.size):
-            #    plt.plot( [x1[C1[i]], x2[C12[i]]], [y1[C1[i]], y2[C12[i]]], 'g' )
-            #plt.show()
+            plt.figure()
+            plt.plot( x1, y1, 'k' )
+            plt.plot( x2, y2, 'r' )
+            plt.plot( x1[self.CI1[i]], y1[self.CI1[i]], 'ko' )
+            plt.plot( x2[self.CI12[i]], y2[self.CI12[i]], 'ro' )
+            for j in xrange(self.CI1[i].size):
+                plt.plot( [x1[self.CI1[i][j]], x2[self.CI12[i][j]]], [y1[self.CI1[i][j]], y2[self.CI12[i][j]]], 'g' )
+            plt.show()
+            self.CI1.append( self.I[i+1] )
+            return None
+        elif self.method == 'curvature':
+            C1 = self.I[0] # Initial Reference Planform
+            # Go Forward
+            for i, (d1, d2) in self.IterData2():
+                self.CI11.append( C1 )
+                C2 = self.I[i+1]
+                C12 = np.zeros_like( C1, dtype=int )
+                x1, y1 = d1['x'], d1['y']
+                x2, y2 = d2['x'], d2['y']
+                Cs1 = self.icwtC[i]
+                Cs2 = self.icwtC[i+1]
+                for ipoint, Ipoint in enumerate( C1 ):
+                    xi1, yi1 = x1[Ipoint], y1[Ipoint]
+                    xC2, yC2 = x2[C2], y2[C2] # Do not care about sign
+                    #xC2 = np.where( Cs2[C2+1]*Cs1[Ipoint+1]<0, np.nan, x2[C2] ) # Take real curvature sign
+                    #yC2 = np.where( Cs2[C2+1]*Cs1[Ipoint+1]<0, np.nan, y2[C2] ) # Take real curvature sign
+                    # Find the Closest
+                    C12[ipoint] = C2[ np.nanargmin( np.sqrt( (xC2-xi1)**2 + (yC2-yi1)**2 ) ) ]
+                # There are some duplicated points - we need to get rid of them
+                unique, counts = np.unique(C12, return_counts=True)
+                duplic = unique[ counts>1 ]
+                cduplic = counts[ counts > 1 ]
+                for idup, (dup, cdup) in enumerate( zip( duplic, cduplic ) ):
+                    idxs = np.where( C12==dup )[0]
+                    idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) )
+                    idxs = np.delete( idxs, idx )
+                    C1 = np.delete( C1, idxs )
+                    C12 = np.delete( C12, idxs )
+    
+                # Sometimes inflections are messed up. Sort them out!
+                C1.sort()
+                C12.sort()
+    
+                ## Plot for Cutoff-to-NewBend Inflection Correlation (for DEBUG purposes only)
+            plt.figure()
+            plt.plot( x1, y1, 'k' )
+            plt.plot( x2, y2, 'r' )
+            plt.plot( x1[C1], y1[C1], 'ko' )
+            plt.plot( x2[C12], y2[C12], 'ro' )
+            for i in xrange(C1.size):
+                plt.plot( [x1[C1[i]], x2[C12[i]]], [y1[C1[i]], y2[C12[i]]], 'g' )
+            plt.show()
 
             self.CI1.append(C1)
             self.CI12.append(C12)
@@ -165,9 +212,9 @@ class AxisMigration( object ):
         for i, (il,ir) in self.Iterbends( I ):
             iapex = il + np.abs( icwtC[ il:ir ] ).argmax()
             BUD[ il ] = 2 # Inflection Point
-            BUD[ ir+1 ] = 2 # Inflection Point
+            BUD[ ir ] = 2 # Inflection Point
             BUD[ iapex ] = 0 # Bend Apex
-            BUD[ il:iapex ] = -1  # Bend Upstream
+            BUD[ il+1:iapex ] = -1  # Bend Upstream
             BUD[ iapex+1:ir ] = +1 # Bend Downstream
         return BUD
 
@@ -203,13 +250,13 @@ class AxisMigration( object ):
     def CorrelateBends( self, *args, **kwargs ):
         '''Once Bends are Separated and Labeled, Correlate Them'''
         self.B12 = []
-        for i, (d1, d2) in self.IterData2():
-            B1 = self.BI[i]
-            B2 = self.BI[i+1]
+        for di, (d1, d2) in self.IterData2():
+            B1 = self.BI[di]
+            B2 = self.BI[di+1]
             B12 = -np.ones( B1.size, dtype=int )
-            I1 = self.CI1[i]
-            I2 = self.CI1[i+1]
-            I12 = self.CI12[i]
+            I1 = self.CI1[di]
+            I2 = self.CI1[di+1]
+            I12 = self.CI12[di]
             x1, y1 = d1['x'], d1['y']
             x2, y2 = d2['x'], d2['y']
 
@@ -222,19 +269,19 @@ class AxisMigration( object ):
                     B12[i1l:i1r] = vals[ cnts.argmax() ]
 
             # for DEBUG purposes
-            #for i, (il, ir) in self.Iterbends( I1 ):
-            #    b1 = slice(il,ir)
-            #    b2 = B2==B12[il]
-            #    print B1[il], B12[il]
-            #    if B12[il] < 0: continue
-            #    xb1, yb1 = x1[b1], y1[b1]
-            #    xb2, yb2 = x2[b2], y2[b2]
-            #    plt.figure()
-            #    plt.plot( x1, y1, 'k' )
-            #    plt.plot( x2, y2, 'r' )
-            #    plt.plot( xb1, yb1, 'k', lw=4 )
-            #    plt.plot( xb2, yb2, 'r', lw=4 )
-            #    plt.show()
+            ## for i, (il, ir) in self.Iterbends( I1 ):
+            ##     b1 = slice(il,ir)
+            ##     b2 = B2==B12[il]
+            ##     print B1[il], B12[il], self.icwtC[di][il:ir].max()
+            ##     if B12[il] < 0: continue
+            ##     xb1, yb1 = x1[b1], y1[b1]
+            ##     xb2, yb2 = x2[b2], y2[b2]
+            ##     plt.figure()
+            ##     plt.plot( x1, y1, 'k' )
+            ##     plt.plot( x2, y2, 'r' )
+            ##     plt.plot( xb1, yb1, 'k', lw=4 )
+            ##     plt.plot( xb2, yb2, 'r', lw=4 )
+            ##     plt.show()
 
             self.B12.append( B12 )
         self.B12.append( -np.ones( x2.size ) ) # Add a Convenience -1 Array for the Last Planform
@@ -243,7 +290,7 @@ class AxisMigration( object ):
         #B = 14
         #plt.figure()
         #for i, d in self.IterData():
-        #    xi, yi = d[0], d[1]
+        #    xi, yi = d['x'], d['y']
         #    if i == 0: plt.plot(xi, yi, 'k')
         #    X = xi[self.BI[i]==B]
         #    Y = yi[self.BI[i]==B]
@@ -279,7 +326,10 @@ class AxisMigration( object ):
         [ x2, y2, s2 ] = data2['x'], data2['y'], data2['s']
         [ dx, dy, dz]  = [ NaNs( x1.size ), NaNs( x1.size ), NaNs( x1.size ) ]
         Ictf = I1.copy()
-        dzmax = 5*np.gradient( s1 ).mean() # XXX : check if this makes sense!!
+        #print s1[I1]
+        #print np.gradient( s1[I1] )
+        #print np.gradient( s1[I1] ).mean()
+        dzmax = np.gradient( s1[I1] ).mean()
         for i, (il,ir) in self.Iterbends( I1 ):
             # Isolate Bend
             mask1 = np.full( s1.size, False, dtype=bool ); mask1[il:ir]=True
@@ -287,9 +337,7 @@ class AxisMigration( object ):
             if B12[il] < 0: continue # Bend Is not Correlated
             bx1, by1, N1 = x1[mask1], y1[mask1], mask1.sum() # Bend in First Planform
             bx2, by2, N2 = x2[mask2], y2[mask2], mask2.sum() # Bend in Second Planform
-            # In order to apply a PCS to the Second Planform, it cannot has more points than the first one
-            if N1 <=1 or N2<=1: continue # FIXME: this shouldn't happen but sometimes it does
-            if N2 > N1: # Remove Random Points from Second Bend
+            if N2 > N1: # Remove Random Points from Second Bend in order to interpolate
                 idx = np.full( N2, True, bool )
                 idx[ np.random.choice( np.arange(1,N2-1), N2-N1, replace=False ) ] = False
                 bx2 = bx2[ idx ]
@@ -304,6 +352,7 @@ class AxisMigration( object ):
             dyb = by2 - by1
             dzb = np.sqrt( dxb**2 + dyb**2 )
             [ dxr, dyr, dzr] = map( np.copy, [ dxb, dyb, dzb ] )
+            ###############################################################################################
             # If the Migration Rate is too high, maybe it is wrong. Put a NaN
             dxb[ dzb > dzmax ] = np.nan # Bind Local Migration Rate to a Maximum
             dyb[ dzb > dzmax ] = np.nan # Bind Local Migration Rate to a Maximum
@@ -320,6 +369,7 @@ class AxisMigration( object ):
                     Ictf[i] = ictfl if ictfl is not None else Ictf[i]
                     Ictf[i+1] = ictfr if ictfr is not None else Ictf[i+1]
             else: # Otherwise, restore migration values
+            #if True:
                 dxb = dxr
                 dyb = dyr
                 dzb = dzr

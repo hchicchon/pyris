@@ -52,10 +52,12 @@ parser.add_argument( '--mask-dir', type=str, help='directory containing mask fil
 parser.add_argument( '--no-geo', action='store_true', help='do not georeference mask files' )
 # Planform Migration
 parser.add_argument( '-M', '--migration', action='store_true', help='compute migration rates of subsequent axis' )
+parser.add_argument( '--bend-method', nargs=1, default='distance', help='method used to find inflection points' )
 parser.add_argument( '--axis-files', nargs='+', help='ordered sequence of files for which the migration rates must be computed' )
 parser.add_argument( '--axis-columns', nargs=2, default=[0,1], help='columns containing axis coordinates' )
 parser.add_argument( '--output-dir', default='migration_output', help='directory where outputs fof migration rates will be stored' )
 parser.add_argument( '--filter-multiplier', default=0.33, help='multiplier of the wavelet filter' )
+
 # Parse Arguments
 args = parser.parse_args()
 
@@ -107,8 +109,9 @@ if args.select_black_mask is not None:
 
 # Store Configuration File
 # ------------------------
-with open( args.config, 'w' ) as cfg_file: cf.write( cfg_file )
-if args.init: print 'Configuration file %s created' % args.config
+if args.config is not None:
+    with open( args.config, 'w' ) as cfg_file: cf.write( cfg_file )
+    if args.init: print 'Configuration file %s created' % args.config
 
 
 # ===================
@@ -148,17 +151,21 @@ if args.axis:
 # Centerline Migration Rates
 # --------------------------
 if args.migration:
-    if not os.path.isdir( migdir ): os.makedirs( migdir )
     from pyris import migration_rates
     if args.axis_files is None and args.config is not None:
+        if not os.path.isdir( migdir ): os.makedirs( migdir )
         title = 'Computing migration rates from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
         print; print title; print '-'*len(title)
         axisfiles = [ os.path.join( axisdir, f ) for f in sorted( os.listdir( axisdir ) ) ]
-        migration_rates( axisfiles, migdir, columns=(2,3),
+        migration_rates( axisfiles, migdir, columns=(2,3), method=cf.get( 'Migration', 'bend_method' ),
+                         use_wavelets=cf.get( 'Migration', 'use_wavelets' ),
                          filter_multiplier=eval(cf.get( 'Migration', 'bend_separation_filter_reduction' )) )
     else:
         if not os.path.isdir( args.output_dir ): os.makedirs( args.output_dir )
         title = 'Computing migration rates from files: %s' % args.axis_files
         print; print title; print '-'*len(title)
-        migration_rates( args.axis_files, args.output_dir, columns=args.axis_columns, filter_multiplier=args.filter_multiplier )
+        migration_rates( args.axis_files, args.output_dir, columns=args.axis_columns,
+                         method=args.bend_method,
+                         use_wavelets=True,
+                         filter_multiplier=args.filter_multiplier )
 

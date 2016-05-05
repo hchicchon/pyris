@@ -43,7 +43,7 @@ __all__ = [
     # mlpy compatibility
     'HAS_MLPY', 'MLPYException', 'MLPYmsg',
     # misc
-    'GeoReference', 'find_nearest', 'NaNs', 'BW',
+    'GeoReference', 'NaNs', 'BW',
     # raster
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
@@ -135,23 +135,23 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
         bands, GeoTransf = LoadLandsatData( landsat )
 
         # GeoReferencing of White and Black masks
-        bw_masks_georef = GeoReference( bands[0], GeoTransf )
+        bw_masks_georef = GeoReference( GeoTransf )
 
         # Apply White Mask
         white = np.zeros( bands[0].shape, dtype=int )
         white_masks = eval( config.get( 'Segmentation', 'white_masks' ) )
         for s in white_masks:
             xx, yy = bw_masks_georef.RefCurve( np.asarray(s[2:]), np.asarray(s[:2]), inverse=True )
-            sx, sy = slice( int(xx[0]), int(xx[1]) ), slice( int(yy[0]), int(yy[1]) )
-            white[ sy, sx ] = 1
+            sy, sx = slice( int(xx[0]), int(xx[1]) ), slice( int(yy[0]), int(yy[1]) )
+            white[ sx, sy ] = 1
 
         # Apply Black Mask
         black = np.ones( bands[0].shape, dtype=int )
         black_masks = eval( config.get( 'Segmentation', 'black_masks' ) )
         for s in black_masks:
             xx, yy = bw_masks_georef.RefCurve( np.asarray(s[2:]), np.asarray(s[:2]), inverse=True )
-            sx, sy = slice( int(xx[0]), int(xx[1]) ), slice( int(yy[0]), int(yy[1]) )
-            black[ sy, sx ] = 0
+            sy, sx = slice( int(xx[0]), int(xx[1]) ), slice( int(yy[0]), int(yy[1]) )
+            black[ sx, sy ] = 0
 
         # Mark Landsat NoData
         nanmask = np.where( bands[0]==0, 1, 0 )
@@ -300,7 +300,7 @@ def vectorize_all( geodir, maskdir, config, axisdir, use_geo=True ):
         if use_geo:
             s_PCS, theta_PCS, Cs_PCS, B_PCS = \
                 sp_PCS*GeoTransf['PixelSize'], thetap_PCS, Csp_PCS/GeoTransf['PixelSize'], Bp_PCS*GeoTransf['PixelSize']
-            GR = GeoReference( pruned, GeoTransf )
+            GR = GeoReference( GeoTransf )
             x_PCS, y_PCS = GR.RefCurve( xp_PCS, yp_PCS )
         else:
             x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS = xp_PCS, yp_PCS, sp_PCS, thetap_PCS, Csp_PCS, Bp_PCS
@@ -310,7 +310,7 @@ def vectorize_all( geodir, maskdir, config, axisdir, use_geo=True ):
         np.save( axisfile, ( xp_PCS, yp_PCS, x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS ) )
 
 
-def migration_rates( axisfiles, migdir, columns=(0,1), filter_multiplier=0.33 ):
+def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wavelets=False, filter_multiplier=0.33 ):
     
     migfiles = [ os.path.join( migdir, os.path.basename( axisfile ) ) for axisfile in axisfiles ]
     X, Y = [], []
@@ -318,8 +318,26 @@ def migration_rates( axisfiles, migdir, columns=(0,1), filter_multiplier=0.33 ):
         axis = load( axisfile )
         x, y = axis[ columns[0] ], axis[ columns[1] ]
         X.append( x ), Y.append( y )
-    migrations = AxisMigration( X, Y )( filter_reduction=filter_multiplier )
+    migrations = AxisMigration( X, Y, method=method, use_wavelets=use_wavelets )( filter_reduction=filter_multiplier )
     for i, migfile in enumerate( migfiles ):
         [ dx, dy, dz, ICWTC, BI, B12, BUD ] = [ m[i] for m in migrations ]
         data = np.vstack( (dx, dy, dz, ICWTC, BI, B12, BUD) )
         save( migfile, data )
+
+    for f1, f2 in zip( axisfiles[:-1], axisfiles[1:] ):
+        a1, a2 = np.load(f1), np.load(f2)
+        m1 = np.load( os.path.join(migdir, os.path.basename( f1 )) )
+        m2 = np.load( os.path.join(migdir, os.path.basename( f2 )) )
+        plt.figure()
+        plt.plot( a1[2], a1[3], 'b' )
+        plt.plot( a1[2][ m1[-1]==2 ], a1[3][ m1[-1]==2 ], 'bo' )
+        plt.plot( a2[2], a2[3], 'r' )
+        plt.plot( a2[2][ m2[-1]==2 ], a2[3][ m2[-1]==2 ], 'ro' )
+        
+        for i in xrange(a1.shape[1]):
+            if m1[-1][i]==2: c='g'
+            else: c='k'
+            plt.arrow( a1[2][i], a1[3][i], m1[0][i], m1[1][i], fc=c, ec=c )
+            
+        plt.axis( 'equal' )
+        plt.show()

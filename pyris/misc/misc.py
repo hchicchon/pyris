@@ -55,102 +55,107 @@ def ediff1d0( x ):
 class GeoReference( object ):
     '''Provide Georeferenced Coordinates for an Image Object'''
 
-    def __init__( self, I, GeoTransf ):
-        self.I = I
+    def __init__( self, GeoTransf ):
         self.GeoTransf = GeoTransf
-        self.RefImage()
+        self.extent = [ GeoTransf['X'], # xmin
+                        GeoTransf['X'] + GeoTransf['PixelSize']*GeoTransf['Lx'], # xmax
+                        GeoTransf['Y'] - GeoTransf['PixelSize']*GeoTransf['Ly'], # ymin
+                        GeoTransf['Y'] # ymax
+                    ]
         return None
 
-    def RefImage( self ):
-        self.Ix, self.Iy = np.arange( self.I.T.shape[0] ), np.arange( self.I.T.shape[1] )
-        self.IX = (self.Ix+1) * self.GeoTransf['PixelSize'] + self.GeoTransf['X']
-        self.IY = ( (self.Iy+1) - self.Iy[-1] ) * self.GeoTransf['PixelSize'] + self.GeoTransf['Y']
-        self.extent = [ self.IX[0], self.IX[-1], self.IY[0], self.IY[-1] ]
-        return self.IX, self.IY
-
     def RefCurve( self, X, Y, inverse=False ):
+        X, Y = np.asarray(X), np.asarray(Y)
         if inverse:
-            self.CX, self.CY = X, Y
-            self.Cx = ( self.CX - self.IX[0] ) / self.GeoTransf['PixelSize']
-            self.Cy = ( self.CY - self.IY[0] ) / self.GeoTransf['PixelSize']
-            return self.Cx, self.Cy
+            Cx = ( X - self.extent[0] ) / self.GeoTransf['PixelSize']
+            Cy = -( Y - self.extent[3] ) / self.GeoTransf['PixelSize']
+            return Cx, Cy
         else:
             self.Cx, self.Cy = X, Y
-            self.CX = X*self.GeoTransf['PixelSize'] + self.IX[0]
-            self.CY = Y*self.GeoTransf['PixelSize'] + self.IY[0]
+            self.CX = self.extent[0] + self.Cx*self.GeoTransf['PixelSize']
+            self.CY = self.extent[3] - self.Cy*self.GeoTransf['PixelSize']
             return self.CX, self.CY
 
 
+class interactive_mask( object ):
 
-def get_dt( name1, name2 ):
-    '''Return Time Interval in Years'''
-    t1 = os.path.splitext( os.path.split( name1 )[-1] )[0]
-    t2 = os.path.splitext( os.path.split( name2 )[-1] )[0]
-    [ y1, d1 ] = [ int( i.strip() ) for i in t1.split('_') ]
-    [ y2, d2 ] = [ int( i.strip() ) for i in t2.split('_') ]
-    T1 = y1 + d1/365
-    T2 = y2 + d2/365
-    return T2 - T1
+    def __init__( self, path ):
+        self.path = os.path.normpath( path )
+        self.name =  self.path.split( os.sep )[-1]
 
-def outliers( data, m=3 ):
-    d = np.abs( data - np.median(data) )
-    mdev = np.median(d)
-    s = d/mdev if mdev else 0
-    return s>m
+    def build_real_color( self ):
+        if self.name.startswith( 'LC8' ):
+            warnings.warn( 'Landsat 8 may return distorted images as real color.', Warning )
+            b1, b2, b3 = 'B6', 'B5', 'B4'
+        else:
+            b1, b2, b3 = 'B5', 'B4', 'B3'
+        B1, B2, B3 = map( imread, [ os.path.join( self.path, '_'.join((self.name,bname))+'.TIF' ) for bname in [ b1, b2, b3 ] ] )
+        return np.dstack( ( B1, B2, B3 ) )
 
-def find_nearest( array, value ):
-    '''Find closest element to value inside array'''
-    return array.flat[ np.abs( array - value ).argmin() ]
+    def _set_mask( self ):
+        real_color = self.build_real_color()
+        white_masks = []
+        plt.ioff()
+        fig = plt.figure()
+        plt.title( 'Press-drag a rectangle for your mask. Close when you are finish.' )
+        plt.imshow( real_color, cmap='binary_r' )
+        plt.axis('equal')
+        x_press = None
+        y_press = None
+        def onpress(event):
+            global x_press, y_press
+            x_press = int(event.xdata) if (event.xdata != None) else None
+            y_press = int(event.ydata) if (event.ydata != None) else None
+        def onrelease(event):
+            global x_press, y_press
+            x_release = int(event.xdata) if (event.xdata != None) else None
+            y_release = int(event.ydata) if (event.ydata != None) else None
+            if (x_press != None and y_press != None
+                and x_release != None and y_release != None):
+                (xs, xe) = (x_press, x_release+1) if (x_press <= x_release) \
+                  else (x_release, x_press+1)
+                (ys, ye) = (y_press, y_release+1) if (y_press <= y_release) \
+                  else (y_release, y_press+1)
+                print( "The mask you selected is [{0}:{1},{2}:{3}]".format(
+                    xs, xe, ys, ye) )
+                white_masks.append( [ ys, ye, xs, xe ] )
+                plt.fill( [xs,xe,xe,xs,xs], [ys,ys,ye,ye,ys], 'r', alpha=0.25 )
+                event.canvas.draw()
+            x_press = None
+            y_press = None
+        cid_press   = fig.canvas.mpl_connect('button_press_event'  , onpress  )
+        cid_release = fig.canvas.mpl_connect('button_release_event', onrelease)
+        plt.show()
+        return white_masks
 
-def argfind_nearest( array, value ):
-    '''Find closest element to value inside array'''
-    return np.abs( array - value ).argmin()
+    def get_georef( self ):
+        bands, GeoTransf = LoadLandsatData( self.path )
+        return GeoReference( GeoTransf )
 
-def smooth( y, freq=200 ):
-    '''Lowpass filter (Butterworth)'''
-    b, a = signal.butter( 4, 5/(freq/2), btype='low' )
-    return signal.filtfilt( b, a, y )
+    def _georeference_masks( self, masks, inverse=False ):
+        GRF = self.get_georef()
+        gmask = []
+        for mask in masks:
+            [ys, ye, xs, xe] = mask
+            X, Y = GRF.RefCurve( np.array([xs,xe]), np.array([ys,ye]), inverse=inverse )
+            gmask.append( [ Y[0], Y[1], X[0], X[1] ] )
+        return gmask
+    
+    def georeference( self, masks ):
+        gmasks = self._georeference_masks( masks )
+        return gmasks
 
-def smooth2( y, fs, cutoff, order=5 ):
-    nyq = 0.5*fs
-    normal_cutoff = cutoff / nyq
-    b, a = signal.butter( order, normal_cutoff, btype='low' )
-    return signal.filtfilt( b, a, y )
+    def dereference( self, gmasks ):
+        masks = self._georeference_masks( gmasks, inverse=True )
+        return masks
 
-def NaNs( N ):
-    '''Create a 1d array of NaNs of size N'''
-    return np.full( N, np.nan )
-
-def crossprod2( v1, v2 ):
-    '''3rd component of 2d vectors cross product'''
-    return v1[0]*v2[1] - v1[1]*v2[0]
-
-def Intersection( P, Q, R, S ):
-    '''Check if two segments PQ and RS intersect and where'''
-    QP = Q - P
-    CRS = crossprod2( R, S ) 
-    t = ( QP[0]*S[1] - S[0]*QP[1] ) / CRS
-    u = ( QP[0]*R[1] - R[0]*QP[1] ) / CRS
-    if ( abs(CRS) > 0 and 0 <= abs(t) <= 1 and 0 <= abs(u) <= 1 ):
-        # Segments Intersect!
-        return True, P + t*R
-    return False, NaNs(2)
-
-def PolygonCentroid( x, y, return_area=False ):
-    if not np.allclose( [x[0], y[0]], [x[-1], y[-1]] ):
-        x = np.append( x, x[0] )
-        y = np.append( y, y[0] )
-    a = x[:-1] * y[1:]
-    b = x[1:] * y[:-1]
-    A = 0.5 * (a - b).sum()    
-    cx = x[:-1] + x[1:]
-    cy = y[:-1] + y[1:]
-    Xc = np.sum( cx*(a-b) ) / (6*A)
-    Yc = np.sum( cy*(a-b) ) / (6*A)
-    X = np.array([Xc, Yc])
-    if return_area:
-        return X, A
-    return X
+    def __call__( self, *args, **kwargs ):
+        inverse = kwargs.pop( 'inverse', False )
+        if inverse:
+            gmasks = list( sys.argv[1] )
+            return self.dereference( gmasks )
+        masks = self._set_mask()
+        return self.georeference( masks )
 
 
 def LoadLandsatData( dirname ):
@@ -167,8 +172,8 @@ def LoadLandsatData( dirname ):
         'PixelSize' : abs( geo.GetGeoTransform()[1] ),
         'X' : geo.GetGeoTransform()[0],
         'Y' : geo.GetGeoTransform()[3],
-        'Lx' : bands[0].shape[0],
-        'Ly' : bands[0].shape[1]
+        'Lx' : bands[0].shape[1],
+        'Ly' : bands[0].shape[0]
         }
     return bands, GeoTransf
 
@@ -262,95 +267,6 @@ class BW( object ):
         return self.RemoveRectangle( rm=1 )
 
 
-class interactive_mask( object ):
-
-    def __init__( self, path ):
-        self.path = os.path.normpath( path )
-        self.name =  self.path.split( os.sep )[-1]
-
-    def build_real_color( self ):
-        if self.name.startswith( 'LC8' ):
-            warnings.warn( 'Landsat 8 may return distorted images as real color.', Warning )
-            b1, b2, b3 = 'B6', 'B5', 'B4'
-        else:
-            b1, b2, b3 = 'B5', 'B4', 'B3'
-        B1, B2, B3 = map( imread, [ os.path.join( self.path, '_'.join((self.name,bname))+'.TIF' ) for bname in [ b1, b2, b3 ] ] )
-        return np.dstack( ( B1, B2, B3 ) )
-
-    def _set_mask( self ):
-        real_color = self.build_real_color()
-        white_masks = []
-        plt.ioff()
-        fig = plt.figure()
-        plt.title( 'Press-drag a rectangle for your mask. Close when you are finish.' )
-        plt.imshow( real_color )
-        plt.axis('equal')
-        x_press = None
-        y_press = None
-        def onpress(event):
-            global x_press, y_press
-            x_press = int(event.xdata) if (event.xdata != None) else None
-            y_press = int(event.ydata) if (event.ydata != None) else None
-        def onrelease(event):
-            global x_press, y_press
-            x_release = int(event.xdata) if (event.xdata != None) else None
-            y_release = int(event.ydata) if (event.ydata != None) else None
-            if (x_press != None and y_press != None
-                and x_release != None and y_release != None):
-                (xs, xe) = (x_press, x_release+1) if (x_press <= x_release) \
-                  else (x_release, x_press+1)
-                (ys, ye) = (y_press, y_release+1) if (y_press <= y_release) \
-                  else (y_release, y_press+1)
-                print( "The mask you selected is [{0}:{1},{2}:{3}]".format(
-                    xs, xe, ys, ye) )
-                white_masks.append( [ ys, ye, xs, xe ] )
-                plt.fill( [xs,xe,xe,xs,xs], [ys,ys,ye,ye,ys], 'r', alpha=0.25 )
-                event.canvas.draw()
-            x_press = None
-            y_press = None
-        cid_press   = fig.canvas.mpl_connect('button_press_event'  , onpress  )
-        cid_release = fig.canvas.mpl_connect('button_release_event', onrelease)
-        plt.show()
-        return white_masks
-
-    def get_georef( self ):
-        B1 = os.path.join( self.path, '_'.join((self.name, 'B1'))+'.TIF' )
-        geo = gdal.Open( B1 )
-        GeoTransf = {    
-            'PixelSize' : abs( geo.GetGeoTransform()[1] ),
-            'X' : geo.GetGeoTransform()[0],
-            'Y' : geo.GetGeoTransform()[3],
-            'Lx' : geo.ReadAsArray().shape[0],
-            'Ly' : geo.ReadAsArray().shape[1]
-            }
-        return GeoReference( geo.ReadAsArray(), GeoTransf )
-
-    def _georeference_masks( self, masks, inverse=False ):
-        GRF = self.get_georef()
-        gmask = []
-        for mask in masks:
-            [ys, ye, xs, xe] = mask
-            X, Y = GRF.RefCurve( np.array([xs,xe]), np.array([ys,ye]), inverse=inverse )
-            gmask.append( [ Y[0], Y[1], X[0], X[1] ] )
-        return gmask
-    
-    def georeference( self, masks ):
-        gmasks = self._georeference_masks( masks )
-        return gmasks
-
-    def dereference( self, gmasks ):
-        masks = self._georeference_masks( gmasks, inverse=True )
-        return masks
-
-    def __call__( self, *args, **kwargs ):
-        inverse = kwargs.pop( 'inverse', False )
-        if inverse:
-            gmasks = list( sys.argv[1] )
-            return self.dereference( gmasks )
-        masks = self._set_mask()
-        return self.georeference( masks )
-
-
 def ShowRasterData( data, label='', title='' ):
     '''Return a GridSpec Instance with Raster imshow,
     colorbar and histogram of its values'''
@@ -383,3 +299,39 @@ def ShowRasterData( data, label='', title='' ):
     ax3.set_ylabel( r'frequency' )
     return fig
 
+
+
+def NaNs( N ):
+    '''Create a 1d array of NaNs of size N'''
+    return np.full( N, np.nan )
+
+def crossprod2( v1, v2 ):
+    '''3rd component of 2d vectors cross product'''
+    return v1[0]*v2[1] - v1[1]*v2[0]
+
+def Intersection( P, Q, R, S ):
+    '''Check if two segments PQ and RS intersect and where'''
+    QP = Q - P
+    CRS = crossprod2( R, S ) 
+    t = ( QP[0]*S[1] - S[0]*QP[1] ) / CRS
+    u = ( QP[0]*R[1] - R[0]*QP[1] ) / CRS
+    if ( abs(CRS) > 0 and 0 <= abs(t) <= 1 and 0 <= abs(u) <= 1 ):
+        # Segments Intersect!
+        return True, P + t*R
+    return False, NaNs(2)
+
+def PolygonCentroid( x, y, return_area=False ):
+    if not np.allclose( [x[0], y[0]], [x[-1], y[-1]] ):
+        x = np.append( x, x[0] )
+        y = np.append( y, y[0] )
+    a = x[:-1] * y[1:]
+    b = x[1:] * y[:-1]
+    A = 0.5 * (a - b).sum()    
+    cx = x[:-1] + x[1:]
+    cy = y[:-1] + y[1:]
+    Xc = np.sum( cx*(a-b) ) / (6*A)
+    Yc = np.sum( cy*(a-b) ) / (6*A)
+    X = np.array([Xc, Yc])
+    if return_area:
+        return X, A
+    return X
