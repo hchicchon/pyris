@@ -307,7 +307,7 @@ def vectorize_all( geodir, maskdir, config, axisdir, use_geo=True ):
 
         # Save Axis Properties
         print 'saving main channel data...'
-        np.save( axisfile, ( xp_PCS, yp_PCS, x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS ) )
+        np.save( axisfile, ( x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS, xp_PCS, yp_PCS ) )
 
 
 def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wavelets=False, filter_multiplier=0.33 ):
@@ -324,20 +324,16 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
         data = np.vstack( (dx, dy, dz, ICWTC, BI, B12, BUD) )
         save( migfile, data )
 
-    for f1, f2 in zip( axisfiles[:-1], axisfiles[1:] ):
-        a1, a2 = np.load(f1), np.load(f2)
+    colors = [ plt.cm.jet(x) for x in np.linspace( 0, 1, len(axisfiles) ) ]
+    lws = np.linspace( 1, 2, len(axisfiles) )
+    plt.figure()
+    for i, f1 in enumerate(axisfiles):
+        a1 = np.load(f1)
         m1 = np.load( os.path.join(migdir, os.path.basename( f1 )) )
-        m2 = np.load( os.path.join(migdir, os.path.basename( f2 )) )
-        plt.figure()
-        plt.plot( a1[2], a1[3], 'b' )
-        plt.plot( a1[2][ m1[-1]==2 ], a1[3][ m1[-1]==2 ], 'bo' )
-        plt.plot( a2[2], a2[3], 'r' )
-        plt.plot( a2[2][ m2[-1]==2 ], a2[3][ m2[-1]==2 ], 'ro' )
-        
-        for i in xrange(a1.shape[1]):
-            if m1[-1][i]==2: c='g'
-            else: c='k'
-            plt.arrow( a1[2][i], a1[3][i], m1[0][i], m1[1][i], fc=c, ec=c )
-            
-        plt.axis( 'equal' )
-        plt.show()
+        name = '/'.join( (os.path.splitext(os.path.basename(f1))[0].split('_')[::-1]) )
+        plt.plot( a1[2], a1[3], c=colors[i], lw=lws[i], label=name )
+        for i in xrange(a1.shape[1]): plt.arrow( a1[2][i], a1[3][i], m1[0][i], m1[1][i], fc='k', ec='k' )
+    plt.axis( 'equal' )
+    plt.legend( loc='best' )
+    plt.title( 'Migration rates' )
+    plt.show()

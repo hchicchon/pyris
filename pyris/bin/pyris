@@ -52,6 +52,7 @@ parser.add_argument( '--mask-dir', type=str, help='directory containing mask fil
 parser.add_argument( '--no-geo', action='store_true', help='do not georeference mask files' )
 # Planform Migration
 parser.add_argument( '-M', '--migration', action='store_true', help='compute migration rates of subsequent axis' )
+parser.add_argument( '--use-wavelets', action='store_true', help='use inverse wavelet to filter curvature' )
 parser.add_argument( '--bend-method', nargs=1, default='distance', help='method used to find inflection points' )
 parser.add_argument( '--axis-files', nargs='+', help='ordered sequence of files for which the migration rates must be computed' )
 parser.add_argument( '--axis-columns', nargs=2, default=[0,1], help='columns containing axis coordinates' )
@@ -157,8 +158,8 @@ if args.migration:
         title = 'Computing migration rates from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
         print; print title; print '-'*len(title)
         axisfiles = [ os.path.join( axisdir, f ) for f in sorted( os.listdir( axisdir ) ) ]
-        migration_rates( axisfiles, migdir, columns=(2,3), method=cf.get( 'Migration', 'bend_method' ),
-                         use_wavelets=cf.get( 'Migration', 'use_wavelets' ),
+        migration_rates( axisfiles, migdir, columns=(0,1), method=cf.get( 'Migration', 'bend_method' ),
+                         use_wavelets=eval(cf.get( 'Migration', 'use_wavelets' )),
                          filter_multiplier=eval(cf.get( 'Migration', 'bend_separation_filter_reduction' )) )
     else:
         if not os.path.isdir( args.output_dir ): os.makedirs( args.output_dir )
@@ -166,6 +167,6 @@ if args.migration:
         print; print title; print '-'*len(title)
         migration_rates( args.axis_files, args.output_dir, columns=args.axis_columns,
                          method=args.bend_method,
-                         use_wavelets=True,
+                         use_wavelets=eval(args.use_wavelets),
                          filter_multiplier=args.filter_multiplier )
 
