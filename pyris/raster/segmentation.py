@@ -47,7 +47,7 @@ def SegmentationIndex( *args, **kwargs ):
     # Apply Local Otsu's Method
     globthresh = threshold_otsu( IDX[np.isfinite(IDX)] )
     if method == 'local':
-        print "applying local Otsu method - this may require some time... \r", 
+        print "applying local Otsu method - this may require some time... ", 
         selem = mm.disk( rad )
         thresh = rank.otsu( img_as_ubyte(IDX), selem )
         print 'done'

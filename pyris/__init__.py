@@ -155,7 +155,7 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
 
         # Mark Landsat NoData
         nanmask = np.where( bands[0]==0, 1, 0 )
-        nanmask = mm.binary_dilation( nanmask, mm.disk( 5 ) )
+        nanmask = mm.binary_dilation( nanmask, mm.disk( 30 ) )
         [ R, G, B, NIR, MIR ] =  [ np.where(white*black==1, band, np.nan) for band in bands ]
 
         # Set Dimensions
@@ -202,29 +202,13 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
             # The larger element in the image will be used.
             warnings.warn( 'automated labels may lead to erroneous planforms! please check your results!' )
             if auto_label == 'auto':
-                # If NDVI was used to extract the mask, combine it with MNDWI
-                if config.get('Segmentation', 'method') == 'NDVI' and num_features > 1:
-                    _, mndwi, _ = SegmentationIndex( R=R, G=G, B=B, MIR=MIR, index='MNDWI', method='global' )
-                    for ifeat in xrange( 1, num_features+1 ):
-                        # If less than 25% of the label is water, ignore the label
-                        if ( ((mndwi*mask_lab)==ifeat).sum() / (mask_lab==ifeat).sum() ) < 0.25:
-                            mask_lab[ mask_lab==ifeat ] = 0
-                    mask *= 0
-                    for ilab, lab in enumerate( np.unique(mask_lab[mask_lab>0]) ): mask[ mask_lab==int(lab) ] = ilab+1
-                else:
-                    # otherwise, just use either all the features or the largest one
-                    # depending whether the planform was isolated or not
-                    if eval( config.get( 'Segmentation', 'white_masks' ) ) == []:
-                        auto_label = 'max'
-                    else:
-                        auto_label = 'all'
+                if config.get( 'Segmentation', 'thresholding' ) == 'local': auto_label = 'max'
+                elif config.get( 'Segmentation', 'thresholding' ) == 'global': auto_label = 'all'
             if auto_label == 'all':
                 mask = mask_lab
             elif auto_label == 'max':
                 labs, counts = np.unique( mask_lab[mask_lab>0], return_counts=True )
                 mask = mask_lab==labs[ counts.argmax() ]
-            elif auto_label == 'auto':
-                pass
             else:
                 e = "labelling method '%s' not known. choose either 'auto', 'max', 'all' or None" % auto_label
                 raise ValueError, e
@@ -268,6 +252,31 @@ def vectorize_all( geodir, maskdir, config, axisdir, use_geo=True ):
         for lab in xrange( 1, num_features+1 ):
             print 'pruning label %d...' % lab
             pruned += lab*Pruning( labelled_skel==lab, int(config.get('Pruning', 'prune_iter')), smooth=False ) # Remove Spurs
+
+        # TMP !!!
+        p = Pruner( pruned )
+        p.BuildStrides()
+        Njunctions = 0
+        for i in xrange( p.strides.shape[0] ):
+            for j in xrange( p.strides.shape[1] ):
+                if p.strides[i,j,1,1] == 1:
+                    s = p.strides[i,j].sum()
+                    if s == 4:
+                        matrix = p.strides[i,j].copy()
+                        matrix[1,1] = 0
+                        pos = zip( *np.where( matrix > 0 ) )
+                        dists = np.zeros( len(pos) )
+                        for ip in xrange( len(pos) ):
+                            ipp = ip+1 if ip+1 < len(pos) else 0
+                            dists[ip] = np.sqrt( (pos[ip][0]-pos[ipp][0])**2 + (pos[ip][1]-pos[ipp][1])**2 )
+                        if np.any( dists<=1.001 ): continue
+                        Njunctions += 1
+        if Njunctions > 15:
+            print
+            print 'Warning!'
+            print 'Expected at least %s recursion level.'
+            print 'Consider increasing the pruning iteration or calling pyris with the --clean-mask flag'
+            print
         
         # Centerline Extraction
         print 'extracting centerline of n=%d labelled elements...' % num_features

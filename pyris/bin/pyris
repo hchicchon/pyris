@@ -58,6 +58,11 @@ parser.add_argument( '--axis-files', nargs='+', help='ordered sequence of files 
 parser.add_argument( '--axis-columns', nargs=2, default=[0,1], help='columns containing axis coordinates' )
 parser.add_argument( '--output-dir', default='migration_output', help='directory where outputs fof migration rates will be stored' )
 parser.add_argument( '--filter-multiplier', default=0.33, help='multiplier of the wavelet filter' )
+# Bars Position
+parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
+parser.add_argument( '--landsat-dirs', nargs='+', help='where landsat are stored' )
+parser.add_argument( '--migration-files', nargs='+', help='if called as standalone, requires migration-files and axis-files' )
+parser.add_argument( '--free-forced', action='store_true', help='free and forced bars are to be detected' )
 
 # Parse Arguments
 args = parser.parse_args()
@@ -161,7 +166,7 @@ if args.migration:
         migration_rates( axisfiles, migdir, columns=(0,1), method=cf.get( 'Migration', 'bend_method' ),
                          use_wavelets=eval(cf.get( 'Migration', 'use_wavelets' )),
                          filter_multiplier=eval(cf.get( 'Migration', 'bend_separation_filter_reduction' )) )
-    else:
+    elif args.axis_files is not None and args.config is None:
         if not os.path.isdir( args.output_dir ): os.makedirs( args.output_dir )
         title = 'Computing migration rates from files: %s' % args.axis_files
         print; print title; print '-'*len(title)
@@ -169,4 +174,18 @@ if args.migration:
                          method=args.bend_method,
                          use_wavelets=eval(args.use_wavelets),
                          filter_multiplier=args.filter_multiplier )
+    else:
+        raise ParserException, 'Either axis-files or config must be provided'
 
+# Bars Position
+# -------------
+if args.bars:
+    from pyris import bars_detection
+    if args.axis_files is None and args.migration_files is None and args.config is not None:
+        if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
+        title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
+    elif args.axis_files is not None and args.migration_files is not None and args.config is None: 
+        if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
+
+    else:
+        raise ParserException, 'bars detection requires either axis files and migration files or config'

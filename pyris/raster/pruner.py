@@ -63,6 +63,7 @@ class Pruner( object ):
         j = 1 + self.img.shape[1] - 3
         self.strides = stride_tricks.as_strided( self.img, (i,j,n,n),
                                                  strides=2*self.img.strides )
+
     def ValuesStrides( self ):
         '''Build cache-friendly Strides Array'''
         n = 3
