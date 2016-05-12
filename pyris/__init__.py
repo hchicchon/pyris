@@ -225,12 +225,18 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
     return None
 
 
-def clean_masks( maskdir, geodir=None, config=None ):
+def clean_masks( maskdir, geodir=None, config=None, file_only=False ):
 
-    maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
-    if geodir is not None: geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
-    else: gofiles = [ None for i in xrange( len(maskfiles) ) ]
-
+    if not file_only:
+        maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
+        if geodir is not None: geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
+        else: gofiles = [ None for i in xrange( len(maskfiles) ) ]
+    else:
+        maskfiles = [ maskdir ]
+        if geodir is not None:
+            geofiles = [ os.path.join( geodir, os.path.splitext(os.path.split( maskdir )[-1] )[0] + '.p' )  ]
+            geofiles = geofiles if os.path.isfile(geofiles[0]) else [ None ]
+        else: geofiles = [ None ]
     for ifile, (maskfile,geofile) in enumerate( zip( maskfiles, geofiles ) ):
         print 'cleaning file %s' % maskfile
         # Look for the corresponding landsat image

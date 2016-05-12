@@ -46,7 +46,7 @@ parser.add_argument( '--select-black-mask', type=str, help='interactively draw b
 # Segmentation
 parser.add_argument( '-S', '--segmentation', action='store_true', help='perform segmentation of all the landsat folders' )
 parser.add_argument( '--label', type=str, help='if auto, pyris will try to label masks by itself. other options are max and all' )
-parser.add_argument( '--clean-mask', action='store_true', help='manually remove some branches' )
+parser.add_argument( '--clean-mask', nargs='*', help='manually remove some branches' )
 # Skeletonization
 parser.add_argument( '-K', '--skeletonization', action='store_true', help='skeletonize masks' )
 # Axis Extraction
@@ -150,12 +150,20 @@ if args.segmentation:
 
 # Manually Clean Masks
 # --------------------
-if args.clean_mask:
+if args.clean_mask is not None:
     from pyris import clean_masks
-    title = 'Manual cleaning of channel masks'
-    print; print title; print '-'*len(title)
-    if args.config is not None: clean_masks( maskdir, geodir=geodir, config=cf )
-    else: clean_masks( maskdir )
+    if len( args.clean_mask ) == 0:
+        title = 'Manual cleaning of channel masks'
+        print; print title; print '-'*len(title)
+        if args.config is not None: clean_masks( maskdir, geodir=geodir, config=cf, file_only=False )
+        else: clean_masks( maskdir )
+    else:
+        for f in args.clean_mask:
+            title = 'Manual cleaning of mask files'
+            print; print title; print '-'*len(title)
+            if args.config is not None: clean_masks( f, geodir=geodir, config=cf, file_only=True )
+            else: clean_masks( maskdir )
+
 
 # Skeletonization
 # ---------------
