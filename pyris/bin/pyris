@@ -46,6 +46,9 @@ parser.add_argument( '--select-black-mask', type=str, help='interactively draw b
 # Segmentation
 parser.add_argument( '-S', '--segmentation', action='store_true', help='perform segmentation of all the landsat folders' )
 parser.add_argument( '--label', type=str, help='if auto, pyris will try to label masks by itself. other options are max and all' )
+parser.add_argument( '--clean-mask', action='store_true', help='manually remove some branches' )
+# Skeletonization
+parser.add_argument( '-K', '--skeletonization', action='store_true', help='skeletonize masks' )
 # Axis Extraction
 parser.add_argument( '-A', '--axis', action='store_true', help='extract main channel axis from channel mask' )
 parser.add_argument( '--mask-dir', type=str, help='directory containing mask files' )
@@ -59,10 +62,10 @@ parser.add_argument( '--axis-columns', nargs=2, default=[0,1], help='columns con
 parser.add_argument( '--output-dir', default='migration_output', help='directory where outputs fof migration rates will be stored' )
 parser.add_argument( '--filter-multiplier', default=0.33, help='multiplier of the wavelet filter' )
 # Bars Position
-parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
-parser.add_argument( '--landsat-dirs', nargs='+', help='where landsat are stored' )
-parser.add_argument( '--migration-files', nargs='+', help='if called as standalone, requires migration-files and axis-files' )
-parser.add_argument( '--free-forced', action='store_true', help='free and forced bars are to be detected' )
+## parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
+## parser.add_argument( '--landsat-dirs', nargs='+', help='where landsat are stored' )
+## parser.add_argument( '--migration-files', nargs='+', help='if called as standalone, requires migration-files and axis-files' )
+## parser.add_argument( '--free-forced', action='store_true', help='free and forced bars are to be detected' )
 
 # Parse Arguments
 args = parser.parse_args()
@@ -129,6 +132,7 @@ if args.config is not None:
 if args.config is not None:
     geodir = os.path.join( cf.get( 'Data', 'output' ), 'geotransf' )
     maskdir = os.path.join( cf.get( 'Data', 'output' ), 'mask' )
+    skeldir = os.path.join( cf.get( 'Data', 'output' ), 'skeleton' )
     axisdir = os.path.join( cf.get( 'Data', 'output' ), 'axis' )
     migdir = os.path.join( cf.get( 'Data', 'output' ), 'migration' )
 
@@ -144,15 +148,34 @@ if args.segmentation:
     print; print title; print '-'*len(title)
     segment_all( landsat_dirs, geodir, cf, maskdir, auto_label=args.label )
 
-# Skeletonize and Extract Centerline
-# ----------------------------------
+# Manually Clean Masks
+# --------------------
+if args.clean_mask:
+    from pyris import clean_masks
+    title = 'Manual cleaning of channel masks'
+    print; print title; print '-'*len(title)
+    if args.config is not None: clean_masks( maskdir, geodir=geodir, config=cf )
+    else: clean_masks( maskdir )
+
+# Skeletonization
+# ---------------
+if args.skeletonization:
+    if not os.path.isdir( skeldir ): os.makedirs( skeldir )
+    if args.mask_dir is not None: maskdir = args.mask_dir
+    from pyris import skeletonize_all
+    title = 'Extracting centerlines for masks in internal directory: %s' % cf.get( 'Data', 'output' )
+    print; print title; print '-'*len(title)
+    skeletonize_all( maskdir, skeldir, cf )
+
+# Extract Centerline
+# ------------------
 if args.axis:
     if not os.path.isdir( axisdir ): os.makedirs( axisdir )
     if args.mask_dir is not None: maskdir = args.mask_dir
     from pyris import vectorize_all
     title = 'Extracting centerlines for masks in internal directory: %s' % cf.get( 'Data', 'output' )
     print; print title; print '-'*len(title)
-    vectorize_all( geodir, maskdir, cf, axisdir, use_geo=(not args.no_geo) )
+    vectorize_all( geodir, maskdir, skeldir, cf, axisdir, use_geo=(not args.no_geo) )
 
 # Centerline Migration Rates
 # --------------------------
@@ -179,13 +202,13 @@ if args.migration:
 
 # Bars Position
 # -------------
-if args.bars:
-    from pyris import bars_detection
-    if args.axis_files is None and args.migration_files is None and args.config is not None:
-        if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
-        title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
-    elif args.axis_files is not None and args.migration_files is not None and args.config is None: 
-        if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
+## if args.bars:
+##     from pyris import bars_detection
+##     if args.axis_files is None and args.migration_files is None and args.config is not None:
+##         if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
+##         title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
+##     elif args.axis_files is not None and args.migration_files is not None and args.config is None: 
+##         if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
 
-    else:
-        raise ParserException, 'bars detection requires either axis files and migration files or config'
+##     else:
+##         raise ParserException, 'bars detection requires either axis files and migration files or config'

@@ -251,11 +251,12 @@ class BW( object ):
                     xs, xe, ys, ye, rm) )
                 self.bw[ys:ye, xs:xe] = rm
                 cm.set_array( self.bw.ravel() )
+                plt.fill( [xs,xe,xe,xs,xs], [ys,ys,ye,ye,ys], 'r', alpha=0.25 )
                 event.canvas.draw()
             x_press = None
             y_press = None
-        cid_press   = fig.canvas.mpl_connect('button_press_event'  , onpress  )
-        cid_release = fig.canvas.mpl_connect('button_release_event', onrelease)
+        cid_press   = fig.canvas.mpl_connect( 'button_press_event'  , onpress   )
+        cid_release = fig.canvas.mpl_connect( 'button_release_event', onrelease )
         plt.show()
 
     def AddPoints( self ):
@@ -265,6 +266,55 @@ class BW( object ):
     def AddRectangle( self ):
         '''Remove an Entire Rectangle from bw figure'''
         return self.RemoveRectangle( rm=1 )
+
+class MaskClean( object ):
+
+    '''
+    Interactive Black and White Image.
+    Allows Interaction with figures in order to modify the image array itself
+    by means of event handlings
+    '''
+    
+    def __init__( self, bw, bg=None ):
+        self.bw = bw.astype( int )
+        self.bg = np.zeros(bw.shape) if bg is None else bg
+        
+    def __call__( self ):
+        #real_color = self.build_real_color()
+        white_masks = []
+        plt.ioff()
+        fig = plt.figure()
+        plt.title( 'Press-drag a rectangle for your mask. Close when you are finish.' )
+        plt.imshow( self.bg, cmap='binary_r' )
+        plt.imshow( self.bw, cmap='jet', alpha=0.5 )
+        plt.axis('equal')
+        x_press = None
+        y_press = None
+        def onpress(event):
+            global x_press, y_press
+            x_press = int(event.xdata) if (event.xdata != None) else None
+            y_press = int(event.ydata) if (event.ydata != None) else None
+        def onrelease(event):
+            global x_press, y_press
+            x_release = int(event.xdata) if (event.xdata != None) else None
+            y_release = int(event.ydata) if (event.ydata != None) else None
+            if (x_press != None and y_press != None
+                and x_release != None and y_release != None):
+                (xs, xe) = (x_press, x_release+1) if (x_press <= x_release) \
+                  else (x_release, x_press+1)
+                (ys, ye) = (y_press, y_release+1) if (y_press <= y_release) \
+                  else (y_release, y_press+1)
+                print( "Slice [{0}:{1},{2}:{3}] will be set to {4}".format(
+                    xs, xe, ys, ye, 0) )
+                self.bw[ ys:ye,xs:xe ] = 0
+                plt.fill( [xs,xe,xe,xs,xs], [ys,ys,ye,ye,ys], 'r', alpha=0.25 )
+                event.canvas.draw()
+            x_press = None
+            y_press = None
+        cid_press   = fig.canvas.mpl_connect('button_press_event'  , onpress  )
+        cid_release = fig.canvas.mpl_connect('button_release_event', onrelease)
+        plt.show()
+        return self.bw
 
 
 def ShowRasterData( data, label='', title='' ):

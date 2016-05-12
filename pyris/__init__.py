@@ -23,6 +23,7 @@ from skimage import morphology as mm
 from skimage.util import img_as_ubyte
 from skimage.io import imread
 from scipy import ndimage
+from skimage.measure import regionprops
 import warnings
 
 # Suppress Warnings
@@ -43,7 +44,7 @@ __all__ = [
     # mlpy compatibility
     'HAS_MLPY', 'MLPYException', 'MLPYmsg',
     # misc
-    'GeoReference', 'NaNs', 'BW',
+    'GeoReference', 'NaNs', 'BW', 'MaskClean'
     # raster
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
@@ -207,37 +208,77 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
             if auto_label == 'all':
                 mask = mask_lab
             elif auto_label == 'max':
-                labs, counts = np.unique( mask_lab[mask_lab>0], return_counts=True )
-                mask = mask_lab==labs[ counts.argmax() ]
+                labs = np.unique( mask_lab[mask_lab>0] )
+                areas = np.zeros( labs.size )
+                for ilab, lab in enumerate( labs ):
+                    rp = regionprops( (mask_lab==lab).astype(int) )
+                    [xl, yl, xr, yr] = [ int(b) for b in rp[0].bbox ]
+                    areas[ilab] = abs( (xr-xl)*(yr-yl) )
+                mask = mask_lab==labs[ areas.argmax() ]
             else:
                 e = "labelling method '%s' not known. choose either 'auto', 'max', 'all' or None" % auto_label
                 raise ValueError, e
+
         print 'saving  mask and GeoTransf data...'
         np.save( maskfile, mask )
         with open( geofile, 'w' ) as gf: pickle.dump( GeoTransf, gf )
     return None
 
 
-def vectorize_all( geodir, maskdir, config, axisdir, use_geo=True ):
+def clean_masks( maskdir, geodir=None, config=None ):
 
     maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
-    if use_geo: geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
+    if geodir is not None: geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
+    else: gofiles = [ None for i in xrange( len(maskfiles) ) ]
+
+    for ifile, (maskfile,geofile) in enumerate( zip( maskfiles, geofiles ) ):
+        print 'cleaning file %s' % maskfile
+        # Look for the corresponding landsat image
+        bg = None
+        if config is not None:
+            year, day = os.path.splitext( os.path.basename(maskfile) )[0].split('_')
+            ldir = config.get('Data', 'input')
+            landsats = [os.path.join(ldir,d) for d in os.listdir(ldir)]
+            for l in landsats:
+                if year+day in os.path.basename(l):
+                    bg = imread(os.path.join( l, os.path.basename(l).strip()+'_B1.TIF' ))
+                    break
+        GeoTransf = pickle.load( open(geofile) ) if geofile is not None else None
+        mask = np.load( maskfile )
+        bw = np.where( mask>0, 1, 0 )
+        bw = MaskClean( bw, bg )()
+        if GeoTransf is not None and config is not None:
+            pixel_width = int(config.get('Data', 'channel_width')) / GeoTransf[ 'PixelSize' ]
+        else:
+            pixel_width = 3
+        bw = RemoveSmallObjects( bw, 100*pixel_width**2 ) # Remove New Small Objects
+
+        ans = None
+        while ans not in ['y', 'n']: ans = raw_input('overwrite mask file?[y/n] ')
+        if ans == 'y':
+            print 'saving mask file'
+            np.save( maskfile, mask*bw )
+        else:
+            print 'skipping'
+
+
+def skeletonize_all( maskdir, skeldir, config ):
+
+    maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
 
     for ifile, maskfile in enumerate( maskfiles ):
         # input
         name = os.path.splitext( os.path.basename( maskfile ) )[0]
         # output
-        axisfile = os.path.join( axisdir, '.'.join(( name, 'npy' )) )
+        skelfile = os.path.join( skeldir, '.'.join(( name, 'npy' )) )
 
         # skip the files which have already been processes
-        if os.path.isfile( axisfile ):
-            print 'data found for file %s - skipping '  % ( axisfile )
+        if os.path.isfile( skelfile ):
+            print 'data found for file %s - skipping '  % ( skelfile )
             continue
         print
         print 'Processing file %s' % ( maskfile )
 
-        # Load mask and GeoFile
-        if use_geo: GeoTransf = pickle.load( open( geofiles[ifile] ) )
         mask = np.load( maskfile ).astype( int )
         num_features = mask.max()
 
@@ -251,10 +292,11 @@ def vectorize_all( geodir, maskdir, config, axisdir, use_geo=True ):
         pruned = np.zeros( mask.shape, dtype=int )
         for lab in xrange( 1, num_features+1 ):
             print 'pruning label %d...' % lab
-            pruned += lab*Pruning( labelled_skel==lab, int(config.get('Pruning', 'prune_iter')), smooth=False ) # Remove Spurs
+            pruned += Pruning( labelled_skel==lab, int(config.get('Pruning', 'prune_iter')), smooth=False ) # Remove Spurs
+        pruned *= dist.astype( int )
 
-        # TMP !!!
-        p = Pruner( pruned )
+        # Check the number of junctions
+        p = Pruner( np.where(pruned>0,1,0) )
         p.BuildStrides()
         Njunctions = 0
         for i in xrange( p.strides.shape[0] ):
@@ -272,18 +314,45 @@ def vectorize_all( geodir, maskdir, config, axisdir, use_geo=True ):
                         if np.any( dists<=1.001 ): continue
                         Njunctions += 1
         if Njunctions > 15:
-            print
-            print 'Warning!'
-            print 'Expected at least %s recursion level.'
-            print 'Consider increasing the pruning iteration or calling pyris with the --clean-mask flag'
-            print
+            print '''
+            'Warning!'
+            'Expected at least %s recursion level.'
+            'Consider increasing the pruning iteration or calling pyris with the --clean-mask flag'
+            ''' % Njunctions
+        np.save( skelfile, pruned )
+    return None
+
+def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
+
+    maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
+    if use_geo: geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
+
+    for ifile, maskfile in enumerate( maskfiles ):
+        # input
+        name = os.path.splitext( os.path.basename( maskfile ) )[0]
+        skelfile = os.path.join( skeldir, '.'.join(( name, 'npy' )) )
+        # output
+        axisfile = os.path.join( axisdir, '.'.join(( name, 'npy' )) )
+
+        # skip the files which have already been processes
+        if os.path.isfile( axisfile ):
+            print 'data found for file %s - skipping '  % ( axisfile )
+            continue
+        print
+        print 'Processing file %s' % ( maskfile )
+
+        # Load mask, skeleton and GeoFile
+        if use_geo: GeoTransf = pickle.load( open( geofiles[ifile] ) )
+        mask = np.load( maskfile ).astype( int )
+        skel = np.load( skelfile ).astype( int )
+        num_features = mask.max()
         
         # Centerline Extraction
         print 'extracting centerline of n=%d labelled elements...' % num_features
         axis = Line2D()
         for lab in xrange( num_features, 0, -1 ):
             print 'extracting label %d...' % lab
-            pdist = dist*(pruned==lab)
+            pdist = skel*(mask==lab)
             curr_axis = ReadAxisLine( pdist, flow_from=config.get('Data', 'flow_from'),
                                       method=config.get('Axis', 'reconstruction_method'),
                                       MAXITER=int(config.get('Axis', 'maxiter')) )
