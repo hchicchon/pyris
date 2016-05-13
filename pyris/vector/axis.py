@@ -195,15 +195,18 @@ class AxisReader( object ):
                         IDX = jncsw.argmax()
                     elif self.method == 'std':
                         # Length Control
+                        idx_to_rm = []
                         for ij in xrange( len(axijs) ):
                             jmin = jncsl.argmin()
                             jmax = jncsl.argmax()
                             if jncsl[jmin]<0.75*jncsl[jmax]:
                                 # If a branch is much shorter than another one, forget about it
-                                del axijs[ jmin ] # This is a list
-                                jncsl = np.delete( jncsl, jmin )
-                                jncsw = np.delete( jncsw, jmin )
-                                rdepths = np.delete( rdepths, jmin )
+                                idx_to_rm.append( jmin )
+                        #del axijs[ idx_to_rm ] # This is a list
+                        axijs[:] = [ axijs[k] for k, elem in enumerate(axijs) if not k in idx_to_rm ]
+                        jncsl = np.delete( jncsl, idx_to_rm )
+                        jncsw = np.delete( jncsw, idx_to_rm )
+                        rdepths = np.delete( rdepths, idx_to_rm )
                         IDX = jncsw.argmax()
                     else:
                         raise ValueError, 'method %s not known. Must be either "std", "length" or "width"' % self.method
