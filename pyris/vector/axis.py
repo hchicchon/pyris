@@ -195,7 +195,7 @@ class AxisReader( object ):
                         IDX = jncsw.argmax()
                     elif self.method == 'std':
                         # Length Control
-                        for ij in xrange( len(pos) ):
+                        for ij in xrange( len(axijs) ):
                             jmin = jncsl.argmin()
                             jmax = jncsl.argmax()
                             if jncsl[jmin]<0.75*jncsl[jmax]:
