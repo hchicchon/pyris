@@ -171,7 +171,7 @@ if args.skeletonization:
     if not os.path.isdir( skeldir ): os.makedirs( skeldir )
     if args.mask_dir is not None: maskdir = args.mask_dir
     from pyris import skeletonize_all
-    title = 'Extracting centerlines for masks in internal directory: %s' % cf.get( 'Data', 'output' )
+    title = 'Skeltonizing masks masks in internal directory: %s' % cf.get( 'Data', 'output' )
     print; print title; print '-'*len(title)
     skeletonize_all( maskdir, skeldir, cf )
 
@@ -181,7 +181,7 @@ if args.axis:
     if not os.path.isdir( axisdir ): os.makedirs( axisdir )
     if args.mask_dir is not None: maskdir = args.mask_dir
     from pyris import vectorize_all
-    title = 'Extracting centerlines for masks in internal directory: %s' % cf.get( 'Data', 'output' )
+    title = 'Extracting centerlines from skeletons in internal directory: %s' % cf.get( 'Data', 'output' )
     print; print title; print '-'*len(title)
     vectorize_all( geodir, maskdir, skeldir, cf, axisdir, use_geo=(not args.no_geo) )
 

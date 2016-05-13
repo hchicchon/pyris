@@ -37,7 +37,7 @@ def default_config():
     cf.set( 'Axis', 'maxiter', 100000 )
 
     cf.add_section( 'Migration' )
-    cf.set( 'Migration', 'method', 'distance' )
+    cf.set( 'Migration', 'bend_method', 'distance' )
     cf.set( 'Migration', 'use_wavelets', False )
     cf.set( 'Migration', 'bend_separation_filter_reduction', 0.5 )
 

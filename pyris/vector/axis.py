@@ -2,7 +2,6 @@ from __future__ import division
 import numpy as np
 from scipy import interpolate
 from numpy.lib import stride_tricks
-from skimage.measure import regionprops
 from ..misc import GeoReference, Line2D
 
 class AxisReader( object ):
@@ -27,9 +26,7 @@ class AxisReader( object ):
         self.method = method # Method used for multithread reaches
         self.verbose = verbose
         self.call_depth = call_depth # Level of recursion
-        self.jidx = jidx # Indexes of multothread junctions
-        [ xl, yl, xr, yr ] = [ int(b) for b in regionprops( self.I.astype(int) )[0].bbox ]
-        self.Lmin = int( min( abs(xr-xl), abs(yr-yl) ) ) # Maximum cartesian size of the channel in pixels
+        self.jidx = jidx # Indexes of multithread junctions
         return None
 
     def GetJunction( self, idx ):
@@ -183,6 +180,10 @@ class AxisReader( object ):
                         # Set back the other branches
                         for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 1
 
+                        # Check whether we are in a closed loop
+                        x0, x1, y0, y1 = axij[0][0], axij[0][-1], axij[1][0], axij[1][-1]
+                        if len(axij[0])>10 and np.sqrt( (x1-x0)**2 + (y1-y0)**2) < 3: continue
+                        
                         axijs.append( axij ) # List of recursive AxisReader instances
                         jncsl[ij] = axij[2].size # Total path length
                         jncsw[ij] = axij[2].mean() # Total path average width
