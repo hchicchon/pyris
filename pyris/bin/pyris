@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 # =============================================
 # Script: pyris
 # Package: PyRIS
@@ -56,7 +55,7 @@ parser.add_argument( '--no-geo', action='store_true', help='do not georeference 
 # Planform Migration
 parser.add_argument( '-M', '--migration', action='store_true', help='compute migration rates of subsequent axis' )
 parser.add_argument( '--use-wavelets', action='store_true', help='use inverse wavelet to filter curvature' )
-parser.add_argument( '--bend-method', nargs=1, default='distance', help='method used to find inflection points' )
+parser.add_argument( '--bend-method', type=str, default='distance', help='method used to find inflection points' )
 parser.add_argument( '--axis-files', nargs='+', help='ordered sequence of files for which the migration rates must be computed' )
 parser.add_argument( '--axis-columns', nargs=2, default=[0,1], help='columns containing axis coordinates' )
 parser.add_argument( '--output-dir', default='migration_output', help='directory where outputs fof migration rates will be stored' )
@@ -203,7 +202,7 @@ if args.migration:
         print; print title; print '-'*len(title)
         migration_rates( args.axis_files, args.output_dir, columns=args.axis_columns,
                          method=args.bend_method,
-                         use_wavelets=eval(args.use_wavelets),
+                         use_wavelets=args.use_wavelets,
                          filter_multiplier=args.filter_multiplier )
     else:
         raise ParserException, 'Either axis-files or config must be provided'
