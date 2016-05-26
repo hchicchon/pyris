@@ -44,7 +44,7 @@ __all__ = [
     # mlpy compatibility
     'HAS_MLPY', 'MLPYException', 'MLPYmsg',
     # misc
-    'GeoReference', 'NaNs', 'BW', 'MaskClean'
+    'GeoReference', 'NaNs', 'BW', 'MaskClean',
     # raster
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
@@ -415,8 +415,10 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
         a1 = np.load(f1)
         m1 = np.load( os.path.join(migdir, os.path.basename( f1 )) )
         name = '/'.join( (os.path.splitext(os.path.basename(f1))[0].split('_')[::-1]) )
-        plt.plot( a1[columns[0]], a1[columns[1]], c=colors[i], lw=lws[i], label=name )
-        for i in xrange(a1.shape[1]): plt.arrow( a1[columns[0]][i], a1[columns[1]][i], m1[0][i], m1[1][i], fc='k', ec='k' )
+        x, y = a1[columns[0]], a1[columns[1]]
+        dx, dy = m1[0], m1[1]
+        plt.plot( x, y, c=colors[i], lw=lws[i], label=name )
+        for i in xrange(a1.shape[1]): plt.arrow( x[i], y[i], dx[i], dy[i], fc='k', ec='k' )
     plt.axis( 'equal' )
     plt.legend( loc='best' )
     plt.title( 'Migration rates' )

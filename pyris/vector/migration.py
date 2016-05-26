@@ -111,7 +111,8 @@ class AxisMigration( object ):
         
     def GetInflections( self, Cs ):
         '''Compute 0-crossings of channel curvature'''
-        return np.where( Cs[1:]*Cs[:-1] < 0 )[0]
+        I = np.where( Cs[1:]*Cs[:-1] < 0 )[0]
+        return I
 
     def DistanceInflections( self, data, prev_data, prev_I ):
         '''Compute Inflection points by moving orthogonally from previous inflection points'''
@@ -355,7 +356,7 @@ class AxisMigration( object ):
                 by2 = by2[ idx ]
                 N2 = bx2.size
             # ReInterpolate Second Planform (Parametric Cubic Spline)
-            if N2 <= 3: kpcs=1 # If we have too few points, use linear interpolation
+            if N2 <= 3  or N1 <= 3: kpcs=1 # If we have too few points, use linear interpolation
             else: kpcs=3
             bx2, by2 = InterpPCS( bx2, by2, N=N1, s=N2, k=kpcs, with_derivatives=False )
             # Compute Migration Rates for the whole bend

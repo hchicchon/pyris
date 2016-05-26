@@ -203,7 +203,7 @@ if args.migration:
         migration_rates( args.axis_files, args.output_dir, columns=args.axis_columns,
                          method=args.bend_method,
                          use_wavelets=args.use_wavelets,
-                         filter_multiplier=args.filter_multiplier )
+                         filter_multiplier=eval(args.filter_multiplier) )
     else:
         raise ParserException, 'Either axis-files or config must be provided'
 
