@@ -29,12 +29,13 @@ class AxisMigration( object ):
             ds = np.sqrt( dx**2 + dy**2 )
             s = np.cumsum( ds )
             theta = np.arctan2( dy, dx )
+            theta -= theta.mean()
             ntheta = theta.copy()
             for i in xrange( 1, theta.size ): # Set theta continuous
                 if (theta[i]-theta[i-1])/np.pi > +1.9: theta[i] -=2*np.pi
                 if (theta[i]-theta[i-1])/np.pi < -1.9: theta[i] +=2*np.pi
             c = -np.gradient( theta, np.gradient(s) )
-            self.data.append( { 'x': x, 'y': y, 's': s, 'c':c } )
+            self.data.append( { 'x': x, 'y': y, 's': s, 'c':c, 't':theta } )
         return None
 
     def IterData( self ):
@@ -102,7 +103,7 @@ class AxisMigration( object ):
         else:
             scales, scalemax = None, None
             icwt = sgnl
-            for i in xrange( int(sgnl.size/10) ):
+            for i in xrange( int(sgnl.size*reduction) ):
                 sgnl[1:-1] = ( sgnl[:-2] + 2*sgnl[1:-1] + sgnl[2:] ) / 4
                 sgnl[0] = ( 2*sgnl[0] + sgnl[1] ) / 3
                 sgnl[-1] = ( 2*sgnl[-1] + sgnl[-2] ) / 3
@@ -186,13 +187,15 @@ class AxisMigration( object ):
                 C12 = np.zeros_like( C1, dtype=int )
                 x1, y1 = d1['x'], d1['y']
                 x2, y2 = d2['x'], d2['y']
-                #Cs1 = self.icwtC[i]
-                #Cs2 = self.icwtC[i+1]
+                Cs1 = self.icwtC[i]
+                Cs2 = self.icwtC[i+1]
+                T1 = d1['t']
+                T2 = d2['t']
                 for ipoint, Ipoint in enumerate( C1 ):
                     xi1, yi1 = x1[Ipoint], y1[Ipoint]
-                    xC2, yC2 = x2[C2], y2[C2] # Do not care about sign
-                    #xC2 = np.where( Cs2[C2+1]*Cs1[Ipoint+1]<0, np.nan, x2[C2] ) # Take real curvature sign
-                    #yC2 = np.where( Cs2[C2+1]*Cs1[Ipoint+1]<0, np.nan, y2[C2] ) # Take real curvature sign
+                    #xC2, yC2 = x2[C2], y2[C2] # Do not care about sign
+                    xC2 = np.where( T2[C2+1]*T1[Ipoint+1]<0, np.nan, x2[C2] ) # Take real curvature sign
+                    yC2 = np.where( T2[C2+1]*T1[Ipoint+1]<0, np.nan, y2[C2] ) # Take real curvature sign
                     # Find the Closest
                     C12[ipoint] = C2[ np.nanargmin( np.sqrt( (xC2-xi1)**2 + (yC2-yi1)**2 ) ) ]
                 # There are some duplicated points - we need to get rid of them
@@ -210,8 +213,19 @@ class AxisMigration( object ):
                 C1.sort()
                 C12.sort()
 
-            self.CI1.append(C1)
-            self.CI12.append(C12)
+                ## x1, y1 = d1['x'], d1['y']
+                ## x2, y2 = d2['x'], d2['y']
+                ## plt.figure()
+                ## plt.plot(x1, y1, 'k')
+                ## plt.plot(x2, y2, 'r')
+                ## plt.plot(x1[C1], y1[C1], 'ko')
+                ## plt.plot(x2[C2], y2[C2], 'ro')
+                ## for c1, c2 in zip(C1, C12):
+                ##     plt.plot([x1[c1], x2[c2]], [y1[c1], y2[c2]], 'g')
+                ## plt.show()
+
+                self.CI1.append(C1)
+                self.CI12.append(C12)
             C1 = C12
         self.CI1.append(C12)
         return None
@@ -356,13 +370,15 @@ class AxisMigration( object ):
                 by2 = by2[ idx ]
                 N2 = bx2.size
             # ReInterpolate Second Planform (Parametric Cubic Spline)
-            if N2 <= 3  or N1 <= 3: kpcs=1 # If we have too few points, use linear interpolation
+            if N1 <= 1 or N2 <= 1: continue
+            if N1 <= 3 or N2 <= 3: kpcs=1 # If we have too few points, use linear interpolation
             else: kpcs=3
             bx2, by2 = InterpPCS( bx2, by2, N=N1, s=N2, k=kpcs, with_derivatives=False )
             # Compute Migration Rates for the whole bend
             dxb = bx2 - bx1
             dyb = by2 - by1
             dzb = np.sqrt( dxb**2 + dyb**2 )
+
             # Sinuosity Control
             sigma2 = ( bs2[-1] - bs2[0] ) / np.sqrt( (by2[-1]-by2[0])**2 + (bx2[-1]-bx2[0])**2 )
             sigma1 = ( bs1[-1] - bs1[0] ) / np.sqrt( (by1[-1]-by1[0])**2 + (bx1[-1]-bx1[0])**2 )
@@ -372,6 +388,12 @@ class AxisMigration( object ):
             dx[ mask1 ] = dxb
             dy[ mask1 ] = dyb
             dz[ mask1 ] = dzb
+
+            ## plt.figure()
+            ## plt.plot(bx1, by1, 'k')
+            ## plt.plot(bx2, by2, 'r')
+            ## for xi, yi, dxi, dyi in zip( bx1, by1, dx[mask1], dy[mask1] ): plt.arrow( xi, yi, dxi, dyi )
+            ## plt.show()
 
         return dx, dy, dz
 

@@ -417,8 +417,15 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
         name = '/'.join( (os.path.splitext(os.path.basename(f1))[0].split('_')[::-1]) )
         x, y = a1[columns[0]], a1[columns[1]]
         dx, dy = m1[0], m1[1]
+        b = m1[4]
+        db = np.ediff1d(b, to_begin=0)
+        idx = np.where(db>0)[0]
         plt.plot( x, y, c=colors[i], lw=lws[i], label=name )
-        for i in xrange(a1.shape[1]): plt.arrow( x[i], y[i], dx[i], dy[i], fc='k', ec='k' )
+        plt.plot( x[idx], y[idx], 'o', c=colors[i] )
+        for i in xrange(0,a1.shape[1],5): plt.arrow( x[i], y[i], dx[i], dy[i], fc='k', ec='k' )
+        # DEBUG
+        #plt.plot( a1[2], a1[4], c=colors[i], lw=lws[i], label=name )
+        #plt.plot( a1[2][idx], a1[4][idx], 'o', c=colors[i] )
     plt.axis( 'equal' )
     plt.legend( loc='best' )
     plt.title( 'Migration rates' )
