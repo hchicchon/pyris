@@ -29,8 +29,6 @@ class AxisMigration( object ):
             ds = np.sqrt( dx**2 + dy**2 )
             s = np.cumsum( ds )
             theta = np.arctan2( dy, dx )
-            theta -= theta.mean()
-            ntheta = theta.copy()
             for i in xrange( 1, theta.size ): # Set theta continuous
                 if (theta[i]-theta[i-1])/np.pi > +1.9: theta[i] -=2*np.pi
                 if (theta[i]-theta[i-1])/np.pi < -1.9: theta[i] +=2*np.pi
@@ -152,7 +150,6 @@ class AxisMigration( object ):
 
         self.CI1 = [] # Points on the Current Planform
         self.CI12 = [] # Points to which the First Planform Points Converge to the Second Planform
-        self.CI11 = [] # Points where the second planform converges into itself to get in the next one (some bends become one bend)
 
         if self.method == 'distance':            
             self.CI1 = [ [] for _ in xrange( len( self.data ) ) ]
@@ -163,18 +160,6 @@ class AxisMigration( object ):
                 self.CI1[i] = self.I[i][ mask ].astype( int )
                 self.CI12[i] = self.CI1[i+1]
                 
-                ## x1, y1 = d1['x'], d1['y']
-                ## x2, y2 = d2['x'], d2['y']
-                ## plt.figure()
-                ## plt.plot( x1, y1, 'b' )
-                ## plt.plot( x2, y2, 'r' )
-                ## plt.plot( x1[self.CI1[i]], y1[self.CI1[i]], 'bo' )
-                ## plt.plot( x2[self.CI12[i]], y2[self.CI12[i]], 'ro' )
-                ## for I in xrange(self.CI1[i].size):
-                ##     plt.plot( [x1[self.CI1[i][I]], x2[self.CI12[i][I]]], [y1[self.CI1[i][I]], y2[self.CI12[i][I]]], 'g', lw=2 )
-                ## for j in xrange( len(self.CI1[i]) ): plt.text( x1[self.CI1[i][j]], y1[self.CI1[i][j]], '%d' % self.CI1[i][j] )
-                ## plt.axis('equal')
-                ## plt.show()
             self.CI12[-1] = self.CI1[-1]
             return None
 
@@ -182,20 +167,25 @@ class AxisMigration( object ):
             C1 = self.I[0] # Initial Reference Planform
             # Go Forward
             for i, (d1, d2) in self.IterData2():
-                self.CI11.append( C1 )
                 C2 = self.I[i+1]
                 C12 = np.zeros_like( C1, dtype=int )
-                x1, y1 = d1['x'], d1['y']
-                x2, y2 = d2['x'], d2['y']
-                Cs1 = self.icwtC[i]
-                Cs2 = self.icwtC[i+1]
-                T1 = d1['t']
-                T2 = d2['t']
+                x1, y1, T1 = d1['x'], d1['y'], d1['t']
+                x2, y2, T2 = d2['x'], d2['y'], d2['t']
+
+                ## x1, y1 = d1['x'], d1['y']
+                ## x2, y2 = d2['x'], d2['y']
+                ## plt.figure()
+                ## plt.plot(x1, y1, 'k')
+                ## plt.plot(x2, y2, 'r')
+                ## plt.plot(x1[C1], y1[C1], 'ko')
+                ## plt.plot(x2[C2], y2[C2], 'ro')
+                ## plt.show()
+
                 for ipoint, Ipoint in enumerate( C1 ):
                     xi1, yi1 = x1[Ipoint], y1[Ipoint]
                     #xC2, yC2 = x2[C2], y2[C2] # Do not care about sign
-                    xC2 = np.where( T2[C2+1]*T1[Ipoint+1]<0, np.nan, x2[C2] ) # Take real curvature sign
-                    yC2 = np.where( T2[C2+1]*T1[Ipoint+1]<0, np.nan, y2[C2] ) # Take real curvature sign
+                    xC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, x2[C2] )
+                    yC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, y2[C2] )
                     # Find the Closest
                     C12[ipoint] = C2[ np.nanargmin( np.sqrt( (xC2-xi1)**2 + (yC2-yi1)**2 ) ) ]
                 # There are some duplicated points - we need to get rid of them
@@ -226,7 +216,7 @@ class AxisMigration( object ):
 
                 self.CI1.append(C1)
                 self.CI12.append(C12)
-            C1 = C12
+                C1 = C12
         self.CI1.append(C12)
         return None
 
@@ -383,7 +373,7 @@ class AxisMigration( object ):
             sigma2 = ( bs2[-1] - bs2[0] ) / np.sqrt( (by2[-1]-by2[0])**2 + (bx2[-1]-bx2[0])**2 )
             sigma1 = ( bs1[-1] - bs1[0] ) / np.sqrt( (by1[-1]-by1[0])**2 + (bx1[-1]-bx1[0])**2 )
             # If Sinuosity has decreased significantly, assume a CutOff occurred
-            if sigma1/sigma2 > 1.5: dxb, dyb, dzb = NaNs( N1 ), NaNs( N1 ), NaNs( N1 )
+            if sigma1/sigma2 > 1.25: dxb, dyb, dzb = NaNs( N1 ), NaNs( N1 ), NaNs( N1 )
             # Set Migration Rate into Main Arrays
             dx[ mask1 ] = dxb
             dy[ mask1 ] = dyb
