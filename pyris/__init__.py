@@ -411,6 +411,7 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
     colors = [ plt.cm.jet(x) for x in np.linspace( 0, 1, len(axisfiles) ) ]
     lws = np.linspace( 1, 5, len(axisfiles) )
     plt.figure()
+    #bend = 20
     for i, f1 in enumerate( axisfiles ):
         a1 = np.load(f1)
         m1 = np.load( os.path.join(migdir, os.path.basename( f1 )) )
@@ -418,9 +419,11 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
         x, y, s = a1[columns[0]], a1[columns[1]], a1[2]
         dx, dy = m1[0], m1[1]
         b = m1[4]
+        #mask = b==bend
         db = np.ediff1d(b, to_begin=0)
         idx = np.where(db>0)[0]
         plt.plot( x, y, c=colors[i], lw=lws[i], label=name )
+        #plt.plot( x[mask], y[mask], c=colors[i], lw=lws[i], label=name )
         plt.plot( x[idx], y[idx], 'o', c=colors[i] )
         for j in xrange(idx.size):
             plt.text( x[idx[j]], y[idx[j]], str(int(b[idx[j]])) )
@@ -428,6 +431,8 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
         # DEBUG
         #plt.plot( a1[2][b>10], a1[5][b>10], c=colors[i], lw=lws[i], label=name )
         #plt.plot( a1[2][idx], a1[5][idx], 'o', c=colors[i] )
+        #print bend
+        #bend = int(m1[5][mask][0])
     plt.axis( 'equal' )
     plt.legend( loc='best' )
     plt.title( 'Migration rates' )

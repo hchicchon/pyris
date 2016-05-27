@@ -29,11 +29,12 @@ class AxisMigration( object ):
             ds = np.sqrt( dx**2 + dy**2 )
             s = np.cumsum( ds )
             theta = np.arctan2( dy, dx )
+            rtheta = theta.copy()
             for i in xrange( 1, theta.size ): # Set theta continuous
                 if (theta[i]-theta[i-1])/np.pi > +1.9: theta[i] -=2*np.pi
                 if (theta[i]-theta[i-1])/np.pi < -1.9: theta[i] +=2*np.pi
             c = -np.gradient( theta, np.gradient(s) )
-            self.data.append( { 'x': x, 'y': y, 's': s, 'c':c, 't':theta } )
+            self.data.append( { 'x': x, 'y': y, 's': s, 'c':c, 't':theta, 'r':rtheta } )
         return None
 
     def IterData( self ):
@@ -169,8 +170,8 @@ class AxisMigration( object ):
             for i, (d1, d2) in self.IterData2():
                 C2 = self.I[i+1]
                 C12 = np.zeros_like( C1, dtype=int )
-                x1, y1, T1 = d1['x'], d1['y'], d1['t']
-                x2, y2, T2 = d2['x'], d2['y'], d2['t']
+                x1, y1, R1, T1 = d1['x'], d1['y'], d1['r'], d1['t']
+                x2, y2, R2, T2 = d2['x'], d2['y'], d2['r'], d2['t']
 
                 ## x1, y1 = d1['x'], d1['y']
                 ## x2, y2 = d2['x'], d2['y']
@@ -179,13 +180,22 @@ class AxisMigration( object ):
                 ## plt.plot(x2, y2, 'r')
                 ## plt.plot(x1[C1], y1[C1], 'ko')
                 ## plt.plot(x2[C2], y2[C2], 'ro')
+                ## plt.axis('equal')
                 ## plt.show()
 
                 for ipoint, Ipoint in enumerate( C1 ):
-                    xi1, yi1 = x1[Ipoint], y1[Ipoint]
-                    #xC2, yC2 = x2[C2], y2[C2] # Do not care about sign
-                    xC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, x2[C2] )
-                    yC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, y2[C2] )
+                    xi1, yi1, ti1 = x1[Ipoint], y1[Ipoint], R1[Ipoint]
+                    xC2, yC2, tC2 = x2[C2], y2[C2], R2[C2] # Do not care about sign
+                    #xC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, x2[C2] )
+                    #yC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, y2[C2] )
+                    #xC2 = np.where( abs( (T2[C2+1])-(T1[Ipoint+1]) )>np.pi, np.nan, x2[C2] )
+                    #yC2 = np.where( abs( (T2[C2+1])-(T1[Ipoint+1]) )>np.pi, np.nan, y2[C2] )
+                    mask = np.logical_and( abs( (R2[C2+1])-(R1[Ipoint+1]) )>0.5*np.pi, abs( (R2[C2+1])-(R1[Ipoint+1]) )<1.5*np.pi ) #* ( R2[C2+1]*R1[Ipoint+1]<0 )
+                    xC2 = np.where( mask, np.nan, x2[C2] )
+                    yC2 = np.where( mask, np.nan, y2[C2] )
+                    tC2 = np.where( mask, np.nan, R2[C2] )
+                    #xC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, x2[C2] )
+                    #yC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, y2[C2] )
                     # Find the Closest
                     C12[ipoint] = C2[ np.nanargmin( np.sqrt( (xC2-xi1)**2 + (yC2-yi1)**2 ) ) ]
                 # There are some duplicated points - we need to get rid of them
@@ -194,24 +204,38 @@ class AxisMigration( object ):
                 cduplic = counts[ counts > 1 ]
                 for idup, (dup, cdup) in enumerate( zip( duplic, cduplic ) ):
                     idxs = np.where( C12==dup )[0]
-                    idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) )
+                    idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) ) ################################ SHOULD TAKE CARE OF BOTH OF THESE!! (...###...)
+                    #idx = np.argmin( np.abs( R2[dup] - R1[C1][idxs] ) )
+                    #idx = np.argmin( np.arctan2( np.sin(R2[dup]-R1[C1][idxs]), np.cos(R2[dup]-R1[C1][idxs]) ) ) #######################
                     idxs = np.delete( idxs, idx )
                     C1 = np.delete( C1, idxs )
                     C12 = np.delete( C12, idxs )
     
                 # Sometimes inflections are messed up. Sort them out!
-                C1.sort()
-                C12.sort()
+                idx_to_rm = []
+                for j in xrange( 1,C12.size ):
+                    if C12[j]<C12[j-1]: idx_to_rm.append(j)
+                C1, C12 = np.delete( C1, idx_to_rm ), np.delete( C12, idx_to_rm )
+                #C1.sort()
+                #C12.sort()
 
-                ## x1, y1 = d1['x'], d1['y']
-                ## x2, y2 = d2['x'], d2['y']
+                ## x1, y1, t1 = d1['x'], d1['y'], d1['r']
+                ## x2, y2, t2 = d2['x'], d2['y'], d2['r']
                 ## plt.figure()
-                ## plt.plot(x1, y1, 'k')
-                ## plt.plot(x2, y2, 'r')
-                ## plt.plot(x1[C1], y1[C1], 'ko')
-                ## plt.plot(x2[C2], y2[C2], 'ro')
-                ## for c1, c2 in zip(C1, C12):
-                ##     plt.plot([x1[c1], x2[c2]], [y1[c1], y2[c2]], 'g')
+                ## #plt.plot(x1, y1, 'k')
+                ## #plt.plot(x2, y2, 'r')
+                ## for xi,yi,ti in zip(x1,y1,t1): plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=8 )
+                ## for xi,yi,ti in zip(x2,y2,t2): plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=8 )
+                ## #plt.plot(x1[C1], y1[C1], 'ko', markersize=10)
+                ## #plt.plot(x2[C2], y2[C2], 'ro', markersize=10)
+                ## for c1, c2 in zip(C1, C12): plt.plot([x1[c1], x2[c2]], [y1[c1], y2[c2]], 'g', lw=4)
+                ## for xi,yi,ti in zip(x1[C1],y1[C1],t1[C1]):
+                ##     plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=80 )
+                ##     plt.text( xi, yi, '%0.3f' % (ti/np.pi) )
+                ## for xi,yi,ti in zip(x2[C2],y2[C2],t2[C2]):
+                ##     plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=80 )
+                ##     plt.text( xi, yi, '%0.3f' % (ti/np.pi) )
+                ## plt.axis('equal')
                 ## plt.show()
 
                 self.CI1.append(C1)
@@ -373,7 +397,7 @@ class AxisMigration( object ):
             sigma2 = ( bs2[-1] - bs2[0] ) / np.sqrt( (by2[-1]-by2[0])**2 + (bx2[-1]-bx2[0])**2 )
             sigma1 = ( bs1[-1] - bs1[0] ) / np.sqrt( (by1[-1]-by1[0])**2 + (bx1[-1]-bx1[0])**2 )
             # If Sinuosity has decreased significantly, assume a CutOff occurred
-            if sigma1/sigma2 > 1.25: dxb, dyb, dzb = NaNs( N1 ), NaNs( N1 ), NaNs( N1 )
+            if sigma1/sigma2 > 1.5: dxb, dyb, dzb = NaNs( N1 ), NaNs( N1 ), NaNs( N1 )
             # Set Migration Rate into Main Arrays
             dx[ mask1 ] = dxb
             dy[ mask1 ] = dyb
