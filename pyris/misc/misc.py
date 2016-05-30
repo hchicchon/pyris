@@ -359,7 +359,7 @@ def crossprod2( v1, v2 ):
     '''3rd component of 2d vectors cross product'''
     return v1[0]*v2[1] - v1[1]*v2[0]
 
-def Intersection( P, Q, R, S ):
+def Intersection( P, Q, R, S, return_point=True ):
     '''Check if two segments PQ and RS intersect and where'''
     QP = Q - P
     CRS = crossprod2( R, S ) 
@@ -367,8 +367,10 @@ def Intersection( P, Q, R, S ):
     u = ( QP[0]*R[1] - R[0]*QP[1] ) / CRS
     if ( abs(CRS) > 0 and 0 <= abs(t) <= 1 and 0 <= abs(u) <= 1 ):
         # Segments Intersect!
-        return True, P + t*R
-    return False, NaNs(2)
+        if return_point: return True, P + t*R
+        else: return True
+    if return_point: return False, NaNs(2)
+    else: return False
 
 def PolygonCentroid( x, y, return_area=False ):
     if not np.allclose( [x[0], y[0]], [x[-1], y[-1]] ):

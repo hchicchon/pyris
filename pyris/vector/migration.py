@@ -173,21 +173,10 @@ class AxisMigration( object ):
                 x1, y1, R1, T1 = d1['x'], d1['y'], d1['r'], d1['t']
                 x2, y2, R2, T2 = d2['x'], d2['y'], d2['r'], d2['t']
 
-                ## x1, y1 = d1['x'], d1['y']
-                ## x2, y2 = d2['x'], d2['y']
-                ## plt.figure()
-                ## plt.plot(x1, y1, 'k')
-                ## plt.plot(x2, y2, 'r')
-                ## plt.plot(x1[C1], y1[C1], 'ko')
-                ## plt.plot(x2[C2], y2[C2], 'ro')
-                ## plt.axis('equal')
-                ## plt.show()
-
                 for ipoint, Ipoint in enumerate( C1 ):
                     xi1, yi1, ti1 = x1[Ipoint], y1[Ipoint], R1[Ipoint]
                     xC2, yC2, tC2 = x2[C2], y2[C2], R2[C2] # Do not care about sign
-                    #lowlim, uplim = 0.5, 1.5
-                    lowlim, uplim = 0.25, 1.75
+                    lowlim, uplim = 0.5, 1.5
                     mask = np.logical_and( abs( (R2[C2+1])-(R1[Ipoint+1]) )>lowlim*np.pi, abs( (R2[C2+1])-(R1[Ipoint+1]) )<uplim*np.pi ) # Data ti be masked with NaNs
                     xC2 = np.where( mask, np.nan, x2[C2] )
                     yC2 = np.where( mask, np.nan, y2[C2] )
@@ -207,12 +196,7 @@ class AxisMigration( object ):
                     idxs = np.delete( idxs, idx )
                     C1 = np.delete( C1, idxs )
                     C12 = np.delete( C12, idxs )
-    
-                # Sometimes inflections are messed up. Sort them out!
-                ## idx_to_rm = []
-                ## for j in xrange( 1,C12.size ):
-                ##     if C12[j]<C12[j-1]: idx_to_rm.append(j)
-                ## C1, C12 = np.delete( C1, idx_to_rm ), np.delete( C12, idx_to_rm )
+
                 while np.any(C12[:-1]>C12[1:]):
                     for j in xrange( 1, C1.size ):
                         l, r = j-1, j
@@ -222,26 +206,7 @@ class AxisMigration( object ):
                                 C1, C12 = np.delete( C1, r ), np.delete( C12, r )
                             else:
                                 C1, C12 = np.delete( C1, l ), np.delete( C12, l )
-                            break
-
-                ## x1, y1, t1 = d1['x'], d1['y'], d1['r']
-                ## x2, y2, t2 = d2['x'], d2['y'], d2['r']
-                ## plt.figure()
-                ## #plt.plot(x1, y1, 'k')
-                ## #plt.plot(x2, y2, 'r')
-                ## for xi,yi,ti in zip(x1,y1,t1): plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=8 )
-                ## for xi,yi,ti in zip(x2,y2,t2): plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=8 )
-                ## #plt.plot(x1[C1], y1[C1], 'ko', markersize=10)
-                ## #plt.plot(x2[C2], y2[C2], 'ro', markersize=10)
-                ## for c1, c2 in zip(C1, C12): plt.plot([x1[c1], x2[c2]], [y1[c1], y2[c2]], 'g', lw=4)
-                ## for xi,yi,ti in zip(x1[C1],y1[C1],t1[C1]):
-                ##     plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=80 )
-                ##     plt.text( xi, yi, '%0.3f' % (ti/np.pi) )
-                ## for xi,yi,ti in zip(x2[C2],y2[C2],t2[C2]):
-                ##     plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=80 )
-                ##     plt.text( xi, yi, '%0.3f' % (ti/np.pi) )
-                ## plt.axis('equal')
-                ## plt.show()
+                            break                
 
                 self.CI1.append(C1)
                 self.CI12.append(C12)
@@ -312,39 +277,8 @@ class AxisMigration( object ):
                 else:
                     B12[i1l:i1r] = vals[ cnts.argmax() ]
 
-            #dB = np.ediff1d( B1, to_begin=0 ).astype(int)
-            #I = np.where(dB>0)[0]
-
-            # for DEBUG purposes
-            ## for i, (il, ir) in self.Iterbends( I1 ):
-            ##     b1 = slice(il,ir)
-            ##     b2 = B2==B12[il]
-            ##     if B12[il] < 0: continue
-            ##     xb1, yb1 = x1[b1], y1[b1]
-            ##     xb2, yb2 = x2[b2], y2[b2]
-            ##     plt.figure()
-            ##     plt.plot( x1, y1, 'k' )
-            ##     plt.plot( x2, y2, 'r' )
-            ##     plt.plot( xb1, yb1, 'k', lw=4 )
-            ##     plt.plot( xb2, yb2, 'r', lw=4 )
-            ##     plt.axis('equal')
-            ##     plt.show()
-
             self.B12.append( B12 )
         self.B12.append( -np.ones( x2.size ) ) # Add a Convenience -1 Array for the Last Planform
-
-        # for DEBUG purposes
-        #B = 14
-        #plt.figure()
-        #for i, d in self.IterData():
-        #    xi, yi = d['x'], d['y']
-        #    if i == 0: plt.plot(xi, yi, 'k')
-        #    X = xi[self.BI[i]==B]
-        #    Y = yi[self.BI[i]==B]
-        #    plt.plot(X, Y, lw=3)
-        #    B = ( self.B12[i][ self.BI[i]==B ] )[0]
-        #plt.show()
-
         return None        
 
     def FindOrthogonalPoint( self, data1, data2, i2, L=None ):
@@ -381,11 +315,16 @@ class AxisMigration( object ):
 
         for i, (il,ir) in self.Iterbends( I1 ):
             # Isolate Bend
+
+            if B12[il] < 0: continue # Bend Is not Correlated
+            if B12[il-1] == B12[il]: continue # More bends go into one
+            if B12[ir+1] == B12[il]: continue # More bends go into one
+
             mask1 = np.full( s1.size, False, dtype=bool ); mask1[il:ir]=True
             mask2 = B2==B12[il]
-            if B12[il] < 0: continue # Bend Is not Correlated
             bx1, by1, bs1, N1 = x1[mask1], y1[mask1], s1[mask1], mask1.sum() # Bend in First Planform
             bx2, by2, bs2, N2 = x2[mask2], y2[mask2], s2[mask2], mask2.sum() # Bend in Second Planform
+
             if N2 > N1: # Remove Random Points from Second Bend in order to interpolate
                 idx = np.full( N2, True, bool )
                 idx[ np.random.choice( np.arange(1,N2-1), N2-N1, replace=False ) ] = False
@@ -411,13 +350,6 @@ class AxisMigration( object ):
             dx[ mask1 ] = dxb
             dy[ mask1 ] = dyb
             dz[ mask1 ] = dzb
-
-            ## plt.figure()
-            ## plt.plot(bx1, by1, 'k')
-            ## plt.plot(bx2, by2, 'r')
-            ## for xi, yi, dxi, dyi in zip( bx1, by1, dx[mask1], dy[mask1] ): plt.arrow( xi, yi, dxi, dyi )
-            ## plt.show()
-
         return dx, dy, dz
 
     def AllMigrationRates( self, recall_on_cutoff=True ):
