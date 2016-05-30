@@ -186,38 +186,43 @@ class AxisMigration( object ):
                 for ipoint, Ipoint in enumerate( C1 ):
                     xi1, yi1, ti1 = x1[Ipoint], y1[Ipoint], R1[Ipoint]
                     xC2, yC2, tC2 = x2[C2], y2[C2], R2[C2] # Do not care about sign
-                    #xC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, x2[C2] )
-                    #yC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, y2[C2] )
-                    #xC2 = np.where( abs( (T2[C2+1])-(T1[Ipoint+1]) )>np.pi, np.nan, x2[C2] )
-                    #yC2 = np.where( abs( (T2[C2+1])-(T1[Ipoint+1]) )>np.pi, np.nan, y2[C2] )
-                    mask = np.logical_and( abs( (R2[C2+1])-(R1[Ipoint+1]) )>0.5*np.pi, abs( (R2[C2+1])-(R1[Ipoint+1]) )<1.5*np.pi ) #* ( R2[C2+1]*R1[Ipoint+1]<0 )
+                    #lowlim, uplim = 0.5, 1.5
+                    lowlim, uplim = 0.25, 1.75
+                    mask = np.logical_and( abs( (R2[C2+1])-(R1[Ipoint+1]) )>lowlim*np.pi, abs( (R2[C2+1])-(R1[Ipoint+1]) )<uplim*np.pi ) # Data ti be masked with NaNs
                     xC2 = np.where( mask, np.nan, x2[C2] )
                     yC2 = np.where( mask, np.nan, y2[C2] )
                     tC2 = np.where( mask, np.nan, R2[C2] )
-                    #xC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, x2[C2] )
-                    #yC2 = np.where( (T2[C2+1])*(T1[Ipoint+1])<0, np.nan, y2[C2] )
                     # Find the Closest
-                    C12[ipoint] = C2[ np.nanargmin( np.sqrt( (xC2-xi1)**2 + (yC2-yi1)**2 ) ) ]
+                    try:
+                        C12[ipoint] = C2[ np.nanargmin( np.sqrt( (xC2-xi1)**2 + (yC2-yi1)**2 ) ) ]
+                    except ValueError:
+                        raise ValueError, 'not able to compute inflection correlation for planform n. %d. Please check your axis' % (i+2)
                 # There are some duplicated points - we need to get rid of them
                 unique, counts = np.unique(C12, return_counts=True)
                 duplic = unique[ counts>1 ]
                 cduplic = counts[ counts > 1 ]
                 for idup, (dup, cdup) in enumerate( zip( duplic, cduplic ) ):
                     idxs = np.where( C12==dup )[0]
-                    idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) ) ################################ SHOULD TAKE CARE OF BOTH OF THESE!! (...###...)
-                    #idx = np.argmin( np.abs( R2[dup] - R1[C1][idxs] ) )
-                    #idx = np.argmin( np.arctan2( np.sin(R2[dup]-R1[C1][idxs]), np.cos(R2[dup]-R1[C1][idxs]) ) ) #######################
+                    idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) )
                     idxs = np.delete( idxs, idx )
                     C1 = np.delete( C1, idxs )
                     C12 = np.delete( C12, idxs )
     
                 # Sometimes inflections are messed up. Sort them out!
-                idx_to_rm = []
-                for j in xrange( 1,C12.size ):
-                    if C12[j]<C12[j-1]: idx_to_rm.append(j)
-                C1, C12 = np.delete( C1, idx_to_rm ), np.delete( C12, idx_to_rm )
-                #C1.sort()
-                #C12.sort()
+                ## idx_to_rm = []
+                ## for j in xrange( 1,C12.size ):
+                ##     if C12[j]<C12[j-1]: idx_to_rm.append(j)
+                ## C1, C12 = np.delete( C1, idx_to_rm ), np.delete( C12, idx_to_rm )
+                while np.any(C12[:-1]>C12[1:]):
+                    for j in xrange( 1, C1.size ):
+                        l, r = j-1, j
+                        cl, cr = C12[l], C12[r]
+                        if cr < cl:
+                            if np.sqrt( (x2[cl]-x1[C1[l]])**2 + (y2[cl]-y1[C1[l]])**2 ) < np.sqrt( (x2[cr]-x1[C1[l]])**2 + (y2[cr]-y1[C1[l]])**2 ):
+                                C1, C12 = np.delete( C1, r ), np.delete( C12, r )
+                            else:
+                                C1, C12 = np.delete( C1, l ), np.delete( C12, l )
+                            break
 
                 ## x1, y1, t1 = d1['x'], d1['y'], d1['r']
                 ## x2, y2, t2 = d2['x'], d2['y'], d2['r']
@@ -288,6 +293,7 @@ class AxisMigration( object ):
     def CorrelateBends( self ):
         '''Once Bends are Separated and Labeled, Correlate Them'''
         self.B12 = []
+        self.ignore = []
         for di, (d1, d2) in self.IterData2():
             B1 = self.BI[di]
             B2 = self.BI[di+1]
@@ -295,8 +301,8 @@ class AxisMigration( object ):
             I1 = self.CI1[di]
             I2 = self.CI1[di+1]
             I12 = self.CI12[di]
-            x1, y1 = d1['x'], d1['y']
-            x2, y2 = d2['x'], d2['y']
+            x1, y1, c1 = d1['x'], d1['y'], d1['c']
+            x2, y2, c2 = d2['x'], d2['y'], d2['c']
 
             # X il momento tengo la correlazione tra gli inflections
             for i, (i1l, i1r, i2l, i2r) in self.Iterbends2( I1, I12 ):
@@ -305,6 +311,9 @@ class AxisMigration( object ):
                     B12[i1l:i1r] = -1
                 else:
                     B12[i1l:i1r] = vals[ cnts.argmax() ]
+
+            #dB = np.ediff1d( B1, to_begin=0 ).astype(int)
+            #I = np.where(dB>0)[0]
 
             # for DEBUG purposes
             ## for i, (il, ir) in self.Iterbends( I1 ):
@@ -397,7 +406,7 @@ class AxisMigration( object ):
             sigma2 = ( bs2[-1] - bs2[0] ) / np.sqrt( (by2[-1]-by2[0])**2 + (bx2[-1]-bx2[0])**2 )
             sigma1 = ( bs1[-1] - bs1[0] ) / np.sqrt( (by1[-1]-by1[0])**2 + (bx1[-1]-bx1[0])**2 )
             # If Sinuosity has decreased significantly, assume a CutOff occurred
-            if sigma1/sigma2 > 1.5: dxb, dyb, dzb = NaNs( N1 ), NaNs( N1 ), NaNs( N1 )
+            if sigma1/sigma2 > 1.2: dxb, dyb, dzb = NaNs( N1 ), NaNs( N1 ), NaNs( N1 )
             # Set Migration Rate into Main Arrays
             dx[ mask1 ] = dxb
             dy[ mask1 ] = dyb

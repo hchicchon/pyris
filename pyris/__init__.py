@@ -425,9 +425,12 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
         plt.plot( x, y, c=colors[i], lw=lws[i], label=name )
         #plt.plot( x[mask], y[mask], c=colors[i], lw=lws[i], label=name )
         plt.plot( x[idx], y[idx], 'o', c=colors[i] )
+        if i >=1: break
         for j in xrange(idx.size):
             plt.text( x[idx[j]], y[idx[j]], str(int(b[idx[j]])) )
-        for i in xrange(0,a1.shape[1],5): plt.arrow( x[i], y[i], dx[i], dy[i], fc='k', ec='k' )
+        for j in xrange(0,a1.shape[1],5): plt.arrow( x[j], y[j], dx[j], dy[j], fc='k', ec='k' )
+        I = m1[6]==2
+        plt.plot( [x[I], x[I]+dx[I]], [y[I], y[I]+dy[I]], 'k', lw=4 )
         # DEBUG
         #plt.plot( a1[2][b>10], a1[5][b>10], c=colors[i], lw=lws[i], label=name )
         #plt.plot( a1[2][idx], a1[5][idx], 'o', c=colors[i] )
