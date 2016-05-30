@@ -213,35 +213,35 @@ class AxisMigration( object ):
                 ## for j in xrange( 1,C12.size ):
                 ##     if C12[j]<C12[j-1]: idx_to_rm.append(j)
                 ## C1, C12 = np.delete( C1, idx_to_rm ), np.delete( C12, idx_to_rm )
-                ## while np.any(C12[:-1]>C12[1:]):
-                ##     for j in xrange( 1, C1.size ):
-                ##         l, r = j-1, j
-                ##         cl, cr = C12[l], C12[r]
-                ##         if cr < cl:
-                ##             if np.sqrt( (x2[cl]-x1[C1[l]])**2 + (y2[cl]-y1[C1[l]])**2 ) < np.sqrt( (x2[cr]-x1[C1[l]])**2 + (y2[cr]-y1[C1[l]])**2 ):
-                ##                 C1, C12 = np.delete( C1, r ), np.delete( C12, r )
-                ##             else:
-                ##                 C1, C12 = np.delete( C1, l ), np.delete( C12, l )
-                ##             break
+                while np.any(C12[:-1]>C12[1:]):
+                    for j in xrange( 1, C1.size ):
+                        l, r = j-1, j
+                        cl, cr = C12[l], C12[r]
+                        if cr < cl:
+                            if np.sqrt( (x2[cl]-x1[C1[l]])**2 + (y2[cl]-y1[C1[l]])**2 ) < np.sqrt( (x2[cr]-x1[C1[l]])**2 + (y2[cr]-y1[C1[l]])**2 ):
+                                C1, C12 = np.delete( C1, r ), np.delete( C12, r )
+                            else:
+                                C1, C12 = np.delete( C1, l ), np.delete( C12, l )
+                            break
 
-                x1, y1, t1 = d1['x'], d1['y'], d1['r']
-                x2, y2, t2 = d2['x'], d2['y'], d2['r']
-                plt.figure()
-                #plt.plot(x1, y1, 'k')
-                #plt.plot(x2, y2, 'r')
-                for xi,yi,ti in zip(x1,y1,t1): plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=8 )
-                for xi,yi,ti in zip(x2,y2,t2): plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=8 )
-                #plt.plot(x1[C1], y1[C1], 'ko', markersize=10)
-                #plt.plot(x2[C2], y2[C2], 'ro', markersize=10)
-                for c1, c2 in zip(C1, C12): plt.plot([x1[c1], x2[c2]], [y1[c1], y2[c2]], 'g', lw=4)
-                for xi,yi,ti in zip(x1[C1],y1[C1],t1[C1]):
-                    plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=80 )
-                    plt.text( xi, yi, '%0.3f' % (ti/np.pi) )
-                for xi,yi,ti in zip(x2[C2],y2[C2],t2[C2]):
-                    plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=80 )
-                    plt.text( xi, yi, '%0.3f' % (ti/np.pi) )
-                plt.axis('equal')
-                plt.show()
+                ## x1, y1, t1 = d1['x'], d1['y'], d1['r']
+                ## x2, y2, t2 = d2['x'], d2['y'], d2['r']
+                ## plt.figure()
+                ## #plt.plot(x1, y1, 'k')
+                ## #plt.plot(x2, y2, 'r')
+                ## for xi,yi,ti in zip(x1,y1,t1): plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=8 )
+                ## for xi,yi,ti in zip(x2,y2,t2): plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=8 )
+                ## #plt.plot(x1[C1], y1[C1], 'ko', markersize=10)
+                ## #plt.plot(x2[C2], y2[C2], 'ro', markersize=10)
+                ## for c1, c2 in zip(C1, C12): plt.plot([x1[c1], x2[c2]], [y1[c1], y2[c2]], 'g', lw=4)
+                ## for xi,yi,ti in zip(x1[C1],y1[C1],t1[C1]):
+                ##     plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=80 )
+                ##     plt.text( xi, yi, '%0.3f' % (ti/np.pi) )
+                ## for xi,yi,ti in zip(x2[C2],y2[C2],t2[C2]):
+                ##     plt.scatter( xi, yi, c=plt.cm.jet( ti/(2*np.pi)+1 ), s=80 )
+                ##     plt.text( xi, yi, '%0.3f' % (ti/np.pi) )
+                ## plt.axis('equal')
+                ## plt.show()
 
                 self.CI1.append(C1)
                 self.CI12.append(C12)
