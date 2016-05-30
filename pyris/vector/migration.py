@@ -176,8 +176,7 @@ class AxisMigration( object ):
                 for ipoint, Ipoint in enumerate( C1 ):
                     xi1, yi1, ti1 = x1[Ipoint], y1[Ipoint], R1[Ipoint]
                     xC2, yC2, tC2 = x2[C2], y2[C2], R2[C2] # Do not care about sign
-                    lowlim, uplim = 0.5, 1.5
-                    mask = np.logical_and( abs( (R2[C2+1])-(R1[Ipoint+1]) )>lowlim*np.pi, abs( (R2[C2+1])-(R1[Ipoint+1]) )<uplim*np.pi ) # Data ti be masked with NaNs
+                    mask = np.logical_and( abs( (R2[C2+1])-(R1[Ipoint+1]) )>0.5*np.pi, abs( (R2[C2+1])-(R1[Ipoint+1]) )<1.5*np.pi ) # Data ti be masked with NaNs
                     xC2 = np.where( mask, np.nan, x2[C2] )
                     yC2 = np.where( mask, np.nan, y2[C2] )
                     tC2 = np.where( mask, np.nan, R2[C2] )
