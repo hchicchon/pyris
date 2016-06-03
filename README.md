@@ -1,16 +1,18 @@
 # README #
 
+Argparse is the up-to-date code. Everything will soon be merged in it
+
 PyRIS - Python RIvers from Satellite
 ### Extract River Features from Landsat Multispectral Data ###
 
-* Contains: pyris (module), SARA.py and SINBA.py (convenience scripts)
+* Contains: pyris (module), pyris (cli script)
 * Version 1.0 (development)
 
 ### Settings ###
 
 * No setup.py is provided yet
 * Configuration: just save it in a working directory
-* Dependancies: numpy, scipy, scikits-image, matplotlib, gdal
+* Dependancies: numpy, scipy, scikits-image, matplotlib, gdal, mlpy(not mandatory but recommended)
 
 ### Contribution guidelines ###
 
