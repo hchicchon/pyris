@@ -19,86 +19,79 @@ class AxisReader( object ):
 
     def __init__( self, I, first_point=None, start_from=None, method='width', verbose=True, call_depth=0, jidx=[] ):
         '''Constructor'''
-
-        self.I = I # Image
-        # Apply A Filter on Border in order to avoid errors
-        self.I[0,:] = 0
-        self.I[:,0] = 0
-        self.I[-1,:] = 0
-        self.I[:,-1] = 0
-        self.BI = np.where( I>0, 1, 0 ) # Binary
-        self.hits = self.BI.copy() # For binary search
-        self.first_point = first_point
-        self.start_from = 't'
-        if start_from is not None: self.start_from = start_from
+        self.I = I
+        self.hits = np.where( I>0, 1, 0 ).astype( int )
+        self.first_point = first_point # Initial Point if known (used in recursion)
+        self.start_from = 'b' if start_from is None else start_from # Where flow comes from
+        self.method = method # Method used for multithread reaches
         self.verbose = verbose
-        self.method = method
-        self.call_depth = call_depth
-        self.jidx = jidx
+        self.call_depth = call_depth # Level of recursion
+        self.jidx = jidx # Indexes of multithread junctions
+        return None
 
     def GetJunction( self, idx ):
-        '''Junction Indexes List'''
+        '''List of multithread junctions indexes'''
         if len( self.jidx ) > 0: idx += self.jidx[-1]
         self.jidx.append( idx )
 
     def BuildStrides( self ):
         '''Build cache-friendly Strides Array'''
         n = 3
-        i = 1 + self.BI.shape[0] - 3
-        j = 1 + self.BI.shape[1] - 3
-        self.strides = stride_tricks.as_strided( self.BI, (i,j,n,n),
-                                                 strides=2*self.BI.strides )
-
+        i = 1 + self.hits.shape[0] - 3
+        j = 1 + self.hits.shape[1] - 3
+        return stride_tricks.as_strided( self.hits, (i,j,n,n), strides=2*self.hits.strides )
 
     def GetFirstPoint( self ):
-
-        ## TODO :: fix inflow direction
+        '''Look for a 3x3 primitive in the image corresponding to the channel starting point'''
 
         if self.first_point is not None:
             self.i0, self.j0 = self.first_point
             return None
 
-        if self.start_from == 't':
-            for i in xrange( self.BI.shape[0]-1, 0, -1 ):
-                if np.all( self.BI[i,:] == 0 ): continue
-                for j in xrange( 1, self.BI.shape[1]-1 ):
+        strides = self.BuildStrides()
+
+        if self.start_from == 'b':
+            for i in xrange( self.hits.shape[0]-1, 0, -1 ):
+                if np.all( self.hits[i,:] == 0 ): continue
+                for j in xrange( 1, self.hits.shape[1]-1 ):
                     for primitive in self.primitives:
                         for iSide in xrange( 4 ):
                             seed = np.rot90( primitive, iSide )
-                            if ( self.strides[i-1,j-1] == seed ).all():
+                            if ( strides[i-1,j-1] == seed ).all():
                                 self.i0, self.j0 = i, j
                                 return None
 
-        elif self.start_from == 'b':
-            for i in xrange( 1, self.BI.shape[0] ):
-                if np.all( self.BI[i,:] == 0 ): continue
-                for j in xrange( 1, self.BI.shape[1]-1 ):
+        elif self.start_from == 't':
+            for i in xrange( 1, self.hits.shape[0] ):
+                if np.all( self.hits[i,:] == 0 ): continue
+                for j in xrange( 1, self.hits.shape[1]-1 ):
+                    if self.hits[i,j] == 0: continue
                     for primitive in self.primitives:
                         for iSide in xrange( 4 ):
                             seed = np.rot90( primitive, iSide )
-                            if ( self.strides[i-1,j-1] == seed ).all():
+                            if ( strides[i-1,j-1] == seed ).all():
                                 self.i0, self.j0 = i, j
                                 return None
 
         elif self.start_from == 'l':
-            for j in xrange( 1, self.BI.shape[1]-1 ):
-                if np.all( self.BI[:,j] == 0 ): continue
-                for i in xrange( 1, self.BI.shape[0]-1 ):
+            for j in xrange( 1, self.hits.shape[1] ):
+                if np.all( self.hits[:,j] == 0 ): continue
+                for i in xrange( 1, self.hits.shape[0]-1 ):
                     for primitive in self.primitives:
                         for iSide in xrange( 4 ):
                             seed = np.rot90( primitive, iSide )
-                            if ( self.strides[i-1,j-1] == seed ).all():
+                            if ( strides[i-1,j-1] == seed ).all():
                                 self.i0, self.j0 = i, j
                                 return None
 
         elif self.start_from == 'r':
-            for j in xrange( self.BI.shape[1]-1, 0, -1 ):
-                if np.all( self.BI[:,j] == 0 ): continue
-                for i in xrange( 1, self.BI.shape[0]-1 ):
+            for j in xrange( self.hits.shape[1]-1, 0, -1 ):
+                if np.all( self.hits[:,j] == 0 ): continue
+                for i in xrange( 1, self.hits.shape[0]-1 ):
                     for primitive in self.primitives:
                         for iSide in xrange( 4 ):
                             seed = np.rot90( primitive, iSide )
-                            if ( self.strides[i-1,j-1] == seed ).all():
+                            if ( strides[i-1,j-1] == seed ).all():
                                 self.i0, self.j0 = i, j
                                 return None
 
@@ -116,124 +109,130 @@ class AxisReader( object ):
 
         '''Find Indexes and Points'''
 
-        I, J = [ self.i0 ], [ self.j0 ]
-        N = 0
+        I, J = [ self.i0 ], [ self.j0 ] # Lists of channel points
+        N = 0 # Counter
         ijunct = 0 # Junction Index
-        junct_found = False
+
         for ITER in xrange( MAXITER ):
-            i0, j0 = I[-1], J[-1]            
-            self.hits[i0,j0] = 0
-            seed = self.hits[i0-1:i0+2, j0-1:j0+2]
-            pos = zip( *np.where( seed > 0 ) )
-            if len( pos ) == 0:
-                break # End Point Found
-            elif len( pos ) == 1:
-                # Put Coordinates in Global Reference System
+            i0, j0 = I[-1], J[-1] # Previous Point
+            self.hits[i0,j0] = 0 # Set it to 0 in the Hit&Miss Matrix
+            seed = self.hits[i0-1:i0+2, j0-1:j0+2] # 3x3 neighboring element
+            pos = zip( *np.where( seed > 0 ) ) # Positive neighbors
+
+            if len( pos ) == 0: # End Point of the channel found
+                break
+
+            elif len( pos ) == 1: # Next Point identified
                 i, j = pos[0]
-                i += i0 - 1
-                j += j0 - 1    
+                i += i0 - 1 # Reference system
+                j += j0 - 1 # Reference system    
                 I.append(i), J.append(j)
                 N += 1
-                self.offset = self.hits.shape[1] - j # for GeoReferencing
-            elif len( pos ) > 1:
-                jdist = self.NeiDist( pos[0], pos[1] ) 
+
+            elif len( pos ) > 1: # More neighboring points
+                jdist = self.NeiDist( pos[0], pos[1] )
                 if len( pos ) == 2 and np.abs(jdist-1) < 1.e-08:
-                    # Two Neighboring cells are found. Just take the closest one
+                    # Two Neighboring cells are found
+                    # Pattern:
+                    #          - * *    o=current cell
+                    #          - o -    *=neighboring cells
+                    #          - - -    -=0 cells
                     dist = np.zeros( len(pos) )
+                    # Choose the closest positive cell
                     for ipos, p in enumerate(pos):
                         dist[ipos] = np.sqrt( (1 - p[0])**2 + (1 - p[1])**2 )
                     idist = dist.argmin()
                     pos = [ pos[idist] ]
-                    # Put Coordinates in Global Reference System
                     i, j = pos[0]
                     i += i0 - 1
                     j += j0 - 1
                     I.append(i), J.append(j)
                     N += 1
-                    self.offset = self.hits.shape[1] - j # for GeoReferencing
 
-                else: # We find a junction between two or more branches
-                    # Recursively Compute the Longest Path to the end of the channel
-                    # By Recursively Removing Branch Junction Points
-                    print '   Found Channel Junction at ', i0, j0, 'n branches %d. ' % len( pos ), \
-                        'Level of recursion: %d' % ( self.call_depth )
+                else: # Multithread channel junction
+                    if self.call_depth==0:
+                        print 'channel junction at ', i0, j0, 'n branches %d - ' % len( pos ), \
+                            'starting recursion (this may require some time)...'
+                    elif self.call_depth > 0 and self.verbose:
+                        print 'channel junction at ', i0, j0, 'n branches %d - ' % len( pos ), \
+                            'level of recursion: %d' % ( self.call_depth )
 
                     jncsl = np.zeros( len( pos ) ) # Total Lengths of the Following Branches at Junction
                     jncsw = np.zeros( len( pos ) ) # Average Width of the Following Branches at Junction
                     rdepths = np.zeros( len( pos ), dtype=int )
                     self.GetJunction( N )                    
-                    jhits = self.hits.copy()
                     axijs = []
 
                     for ij in xrange( len(pos) ):
+
                         # For each of the Junctions is created a recursive instance
-                        # with a maximum iteration number of 50 cells
-                        # the one width the maximum average width is chosen
                         first_point = ( pos[ij][0]+i0-1, pos[ij][1]+j0-1 ) # Initial Point of the Local Branch
-                        jhits[ pos[abs(ij-1)][0]+i0-1, pos[abs(ij-1)][1]+j0-1  ] = 0 # Remove the other ones
-                
-                        if self.method == 'width': ITER=200
-                        else: ITER=MAXITER
-                        
-                        axr = AxisReader( self.I*jhits, first_point=first_point,
-                                          verbose=True, method=self.method,
+
+                         # Temporally remove other branches
+                        removed_indexes = [ ij-1, (ij+1)%len(pos) ]
+                        for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 0
+
+                        # Recursive call
+                        axr = AxisReader( self.I*self.hits, first_point=first_point, method=self.method,
                                           call_depth=self.call_depth+1, jidx=self.jidx )
-                        axij = axr( MAXITER=ITER )
+                        axij = axr( MAXITER=MAXITER )
 
-                        axijs.append( axij )
-                        jncsl[ij] = axij[2].size # Total Path Length
-                        jncsw[ij] = axij[2].mean() # Total Path Average Width
-                        rdepths[ij] = axr.call_depth # Total Level of Recursion of Class Instance
+                        # Set back the other branches
+                        for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 1
 
-                    # Now Remove Narrower Branch Iteratively
+                        # Check whether we are in a closed loop
+                        x0, x1, y0, y1 = axij[0][0], axij[0][-1], axij[1][0], axij[1][-1]
+                        if len(axij[0])>10 and np.sqrt( (x1-x0)**2 + (y1-y0)**2) < 3: continue
+                        
+                        axijs.append( axij ) # List of recursive AxisReader instances
+                        jncsl[ij] = axij[2].size # Total path length
+                        jncsw[ij] = axij[2].mean() # Total path average width
+                        rdepths[ij] = axr.call_depth # Total level of recursion
+
+                    if self.method == 'length':
+                        IDX = jncsl.argmax()
                     if self.method == 'width':
-                        for ij in xrange( len(pos)-1 ):
-                            # Remove Narrower Branches from the Hit&Miss Matrix
-                            self.hits[ axijs[jncsw.argmin()][1][0], axijs[jncsw.argmin()][0][0] ] = 0 # Delete Averagely Narrowest Path
-                            np.delete( jncsw, jncsw.argmin() )
-
-                    elif self.method == 'length':
-                        # Recursively Append the Following Reach
-                        _J, _I, _ = axijs[ jncsl.argmax() ] # Longest Path
-                        self.call_depth += rdepths[ jncsl.argmax() ]
-                        I.extend( _I ), J.extend( _J )
-                        break
-
+                        IDX = jncsw.argmax()
                     elif self.method == 'std':
                         # Length Control
-                        for ij in xrange( len(pos) ):
+                        idx_to_rm = []
+                        for ij in xrange( len(axijs) ):
                             jmin = jncsl.argmin()
                             jmax = jncsl.argmax()
                             if jncsl[jmin]<0.75*jncsl[jmax]:
                                 # If a branch is much shorter than another one, forget about it
-                                np.delete( jncsl, jmin )
-                                np.delete( jncsw, jmin )
-                                np.delete( axijs, jmin )
-                                np.delete( rdepths, jmin )
-                        # Take the Widest between the remaining branches
-                        _J, _I, _ = axijs[ jncsw.argmax() ] # Widest Branch
-                        self.call_depth = rdepths[ jncsw.argmax() ]
-                        I.extend( _I ), J.extend( _J )
-                        del axijs, axij, axr # Free some Memory
-                        break
+                                idx_to_rm.append( jmin )
+                        #del axijs[ idx_to_rm ] # This is a list
+                        axijs[:] = [ axijs[k] for k, elem in enumerate(axijs) if not k in idx_to_rm ]
+                        jncsl = np.delete( jncsl, idx_to_rm )
+                        jncsw = np.delete( jncsw, idx_to_rm )
+                        rdepths = np.delete( rdepths, idx_to_rm )
+                        IDX = jncsw.argmax()
+                    else:
+                        raise ValueError, 'method %s not known. Must be either "std", "length" or "width"' % self.method
 
-        if ITER == MAXITER-1 and self.verbose:
+                    # Take the Widest between the remaining branches
+                    _J, _I, _ = axijs[ IDX ]
+                    self.call_depth = rdepths[ IDX ]
+                    I.extend( _I ), J.extend( _J )
+                    del axijs, axij, axr # Free some Memory
+                    break
+
+
+        if ITER == MAXITER-1 and not self.method == 'fast':
             print 'WARNING: Maximum number of iteration reached in axis extraction!'
-        Xpx, Ypx = np.asarray( I ), np.asarray( J )
-        Bpx = self.I[I, J]
-        # For some reason they are inverted
-        # TODO: check code
-        return [ Ypx, Xpx, Bpx ]
+        I, J = np.asarray( I ), np.asarray( J )
+        B = self.I[I, J]
+        return [ J, I, B ]
 
     def __call__( self, MAXITER=100000 ):
-        self.BuildStrides()
         self.GetFirstPoint()
         return self.Vectorize( MAXITER=MAXITER )
 
                 
 
 
-def ReadAxisLine( I, GeoTransf, flow_from=None, method='std' ):
+def ReadAxisLine( I, flow_from=None, method='std', MAXITER=100000 ):
 
     '''
     Convenience function for AxisReader class.
@@ -242,11 +241,6 @@ def ReadAxisLine( I, GeoTransf, flow_from=None, method='std' ):
     Args
     ====
     I : Image array of the channel axis over black background
-    GeoTransf : Dict Containing Lower Left Corner Coordinates and
-                Pixel Size
-                - X
-                - Y
-                - PixelSize
     Return
     ======
     Line2D with axis coordinates, intrinsic coordinate
@@ -254,30 +248,28 @@ def ReadAxisLine( I, GeoTransf, flow_from=None, method='std' ):
     '''
     
     r = AxisReader( I, start_from=flow_from, method=method )
-    [ Xpx, Ypx, Bpx ] = r()
-    print 'Axis Read with a Recursion Level of %s' % r.call_depth
+    [ Xpx, Ypx, Bpx ] = r( MAXITER=MAXITER )
+    print 'axis read with a recursion level of %s' % r.call_depth
     
-    # Cut Borders (there are some issues sometimes)
-    Xpx = Xpx[10:-10]
-    Ypx = Ypx[10:-10]
-    Bpx = Bpx[10:-10]
-
-    # GeoReference
-    # ------------
-    GR = GeoReference( I, GeoTransf )
-    X, Y = GR.RefCurve( Xpx, Ypx )
-    B = Bpx * GeoTransf['PixelSize']
-
-    line = Line2D( [ X, Y ] )
-    line.attr( 'B', B )
-    dx = np.ediff1d( X, to_begin=0 )
-    dy = np.ediff1d( Y, to_begin=0 )
-    ds = np.sqrt( dx**2 + dy**2 )
-    s = np.cumsum( ds )
-    line.attr( 's', s )
-    line.attr( 'L', line.d['s'][-1] )
-
+    # Pixelled Line
+    # -------------
+    line = Line2D( x=Xpx, y=Ypx, B=Bpx )
     return line
+
+    ## # GeoReferenced Line
+    ## # ------------------
+    ## GR = GeoReference( I, GeoTransf )
+    ## X, Y = GR.RefCurve( Xpx, Ypx )
+    ## B = Bpx * GeoTransf['PixelSize']
+    ## geoline = Line2D( [ X, Y ] )
+    ## geoline.attr( 'B', B )
+    ## dx = np.ediff1d( X, to_begin=0 )
+    ## dy = np.ediff1d( Y, to_begin=0 )
+    ## ds = np.sqrt( dx**2 + dy**2 )
+    ## s = np.cumsum( ds )
+    ## geoline.attr( 's', s )
+    ## geoline.attr( 'L', line.d['s'][-1] )
+    #return line, geoline
 
 
 

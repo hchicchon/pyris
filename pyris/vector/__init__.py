@@ -5,12 +5,12 @@ from .. import HAS_MLPY, MLPYException, MLPYmsg
 if HAS_MLPY: from .. import wave
 from axis import AxisReader, ReadAxisLine
 from interpolation import InterpPCS, CurvaturePCS, WidthPCS
-from migration import MigRateBend
+from migration import AxisMigration
 
 
 __all__ = [ 
     'AxisReader', 'ReadAxisLine',
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
-    'MigRateBend',
+    'AxisMigration',
              ]
 

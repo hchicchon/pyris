@@ -2,7 +2,6 @@ from __future__ import division
 import numpy as np
 from numpy.lib import stride_tricks
 from skimage.measure import regionprops
-from ..misc import isRaster
 
 class Pruner( object ):
     '''
@@ -64,6 +63,7 @@ class Pruner( object ):
         j = 1 + self.img.shape[1] - 3
         self.strides = stride_tricks.as_strided( self.img, (i,j,n,n),
                                                  strides=2*self.img.strides )
+
     def ValuesStrides( self ):
         '''Build cache-friendly Strides Array'''
         n = 3
@@ -100,7 +100,7 @@ class Pruner( object ):
     def Smooth( self, NMAX ):
         '''Smooth() - Remove Very High Local Curvature Gradients'''
         self.BuildStrides()
-        print '   Pruning - Smoothing Centerline'
+        print 'smoothing centerline...'
         for side in xrange( 4 ):
             seed = np.rot90( self.smooth_block, side )
             mask = ( self.strides == seed ).all( axis=(2,3) )
@@ -118,17 +118,16 @@ class Pruner( object ):
         '''Prune( NMAX ) - Pruning Iterations'''
         for i in xrange( NMAX ):
             self.BuildStrides()
-            if verbose: print '   Pruning - Iteration %03d on %3d' % ( i+1, NMAX )
+            if verbose: print 'pruning iteration %03d on %3d' % ( i+1, NMAX )
             remainder = self.Update( self.primitives )
             if self.Convergence( remainder ):
                 if verbose:
                     print \
-                      '   Pruning - Convergence reached after %3d iterations' \
+                      'pruning convergence reached after %3d iterations' \
                       % (i+1)
                 break
             if i+1 == NMAX:
-                print '   Pruning - Warning! Maximum number of iterations reached!'
-                print '   Pruning - Consider increasing maximum iteration number'
+                print 'maximum number of pruning iterations reached'
 
     def __call__( self, NMAX, verbose=True, fix_skel=True, smooth=True ):
         if fix_skel: self.FixWrongSkelBlocks()
@@ -137,7 +136,7 @@ class Pruner( object ):
         pruned_values = self.img * self.values
         ret = np.zeros( self.original.shape )
         ret[self.bbox] = pruned_values
-        return ret
+        return ret.astype( int )
 
 
 
@@ -148,10 +147,6 @@ def Pruning( raster, NMAX=100, fix_skel=True, smooth=True, verbose=True ):
     NMAX = maximum number of pruning iterations.
     Convenience Function for Class Pruner.
     '''
-    
-    if not isRaster( raster ):
-        raise TypeError, \
-          '''Input must be a raster image'''
-    img = raster.astype( np.uint8 )
+    img = raster.astype( int )
     pruner = Pruner( img )
     return pruner( NMAX, verbose, fix_skel, smooth )
