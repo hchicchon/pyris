@@ -63,8 +63,8 @@ parser.add_argument( '--output-dir', default='migration_output', help='directory
 parser.add_argument( '--filter-multiplier', default=0.33, help='multiplier of the wavelet filter' )
 # Bars Position
 parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
-parser.add_argument( '--landsat-dirs', nargs='+', help='where landsat are stored' )
-parser.add_argument( '--migration-files', nargs='+', help='if called as standalone, requires migration-files and axis-files' )
+#parser.add_argument( '--landsat-dirs', nargs='+', help='where landsat are stored' )
+#parser.add_argument( '--migration-files', nargs='+', help='if called as standalone, requires migration-files and axis-files' )
 #parser.add_argument( '--free-forced', action='store_true', help='free and forced bars are to be detected' )
 
 # Parse Arguments
@@ -223,11 +223,6 @@ if args.migration:
 # -------------
 if args.bars:
     from pyris import bars_detection
-    if args.axis_files is None and args.migration_files is None and args.config is not None:
     #if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
     title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
     bars_detection( landsat_dirs, geodir, axisdir, migdir )
-    #elif args.axis_files is not None and args.migration_files is not None and args.config is None: 
-       #if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
-    else:
-       raise ParserException, 'bars detection requires either axis files and migration files or config'

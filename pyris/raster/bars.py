@@ -22,7 +22,7 @@ class Unwrapper( object ):
     GeoTransf   SARA.py-like Geospatial Coordinate Transform
     '''
 
-    def __init__( self, data, GeoTransf ):
+    def __init__( self, data, mig, GeoTransf ):
         '''Read the Georeferenced River Planform'''
         self.data = data
         self.GeoTransf = GeoTransf
@@ -32,9 +32,9 @@ class Unwrapper( object ):
         self.theta = data[3]
         self.Cs = data[4]
         self.b = data[5]
-        self.Bend = data[8].astype( int )
-        self.NextBend = data[9].astype( int )
-        self.Ipoints = ( np.where( data[10].astype( int )==2 )[0] ).astype( int )
+        self.Bend = mig[5].astype( int )
+        self.NextBend = data[6].astype( int )
+        self.Ipoints = ( np.where( data[7].astype( int )==2 )[0] ).astype( int )
         self.BendIndexes = np.unique( self.Bend[ self.Bend>=0 ] )
         return None
 
@@ -120,27 +120,27 @@ class BarFinder( object ):
         Wbands = { } # Water bands
         Vbands = { } # Vegetation bands
 
-        for nband in [ 'R', 'G', 'B', 'NIR', 'MIR', 'Bawei' ]:
+        for nband in [ 'R', 'G', 'B', 'NIR', 'MIR' ]:
             Wbands[nband] = ndimage.interpolation.map_coordinates(
                 bands[nband][::-1,:], [self.unwrapper.Yc, self.unwrapper.Xc] )
 
         # Segmentation - Define Water
         Idx, isWater, otsu_glob = SegmentationIndex(
             R=Wbands['R'], G=Wbands['G'], B=Wbands['B'],
-            NIR=Wbands['NIR'], MIR=Wbands['MIR'], Bawei=Wbands['Bawei'],
+            NIR=Wbands['NIR'], MIR=Wbands['MIR'],
             index='MNDWI', method='global' )
     
         # Segmentation - Define Vegetation
-        for nband in [ 'R', 'G', 'B', 'NIR', 'MIR', 'Bawei' ]:
-            Vbands[nband] = np.where( ~isWater.bw, Wbands[nband], np.nan )
+        for nband in [ 'R', 'G', 'B', 'NIR', 'MIR' ]:
+            Vbands[nband] = np.where( ~isWater, Wbands[nband], np.nan )
 
         Idx, isNotVeg, otsu_glob = SegmentationIndex(
             R=Vbands['R'], G=Vbands['G'], B=Vbands['B'],
-            NIR=Vbands['NIR'], MIR=Vbands['MIR'], Bawei=Vbands['Bawei'],
+            NIR=Vbands['NIR'], MIR=Vbands['MIR'],
             index='NDVI', method='local' ) ## This must be made locally, otherwise we dont see bars eventually
 
         # Channel - ( Water + Vegetation ) = Bars
-        Bars = np.where( np.bitwise_and(~isWater.bw, isNotVeg.bw), 1, 0 ).astype(np.uint8)
+        Bars = np.where( np.bitwise_and(~isWater, isNotVeg), 1, 0 ).astype(np.uint8)
         
         # Apply a Convex Hull to Channel Bars
         Bars = mm.convex_hull_object( Bars )
