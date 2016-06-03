@@ -5,7 +5,8 @@ from segmentation import Thresholding, SegmentationIndex
 __all__ = [
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
-    'Thresholding', 'SegmentationIndex'
+    'Thresholding', 'SegmentationIndex',
+    'Unwrapper', 'BarFinder', 'TemporalBars',
     ]
 
 

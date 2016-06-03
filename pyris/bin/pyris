@@ -7,7 +7,7 @@
 # Description: Wrapper script for PyRIS package
 # =============================================
 
-import os, sys, ast
+import os, sys
 import argparse
 
 try:
@@ -62,13 +62,14 @@ parser.add_argument( '--axis-columns', nargs=2, default=[0,1], help='columns con
 parser.add_argument( '--output-dir', default='migration_output', help='directory where outputs fof migration rates will be stored' )
 parser.add_argument( '--filter-multiplier', default=0.33, help='multiplier of the wavelet filter' )
 # Bars Position
-## parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
-## parser.add_argument( '--landsat-dirs', nargs='+', help='where landsat are stored' )
-## parser.add_argument( '--migration-files', nargs='+', help='if called as standalone, requires migration-files and axis-files' )
-## parser.add_argument( '--free-forced', action='store_true', help='free and forced bars are to be detected' )
+parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
+parser.add_argument( '--landsat-dirs', nargs='+', help='where landsat are stored' )
+parser.add_argument( '--migration-files', nargs='+', help='if called as standalone, requires migration-files and axis-files' )
+#parser.add_argument( '--free-forced', action='store_true', help='free and forced bars are to be detected' )
 
 # Parse Arguments
 args = parser.parse_args()
+
 # Initialize Config File
 # ----------------------
 if args.init:
@@ -107,7 +108,7 @@ if args.select_white_mask is not None:
     white_masks = interactive_mask( args.select_white_mask )()
     cf.set( 'Segmentation', 'white_masks', white_masks )
 
-# Interactiverly Draw Black Mask
+ # Interactiverly Draw Black Mask
 # ------------------------------
 if args.select_black_mask is not None:
     from pyris.misc import interactive_mask
@@ -134,12 +135,12 @@ if args.config is not None:
     skeldir = os.path.join( cf.get( 'Data', 'output' ), 'skeleton' )
     axisdir = os.path.join( cf.get( 'Data', 'output' ), 'axis' )
     migdir = os.path.join( cf.get( 'Data', 'output' ), 'migration' )
+    landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.listdir(cf.get('Data','input'))
+                             if os.path.isdir( os.path.join(cf.get('Data','input'), f) ) ] )
 
 # Perform Image Segmentation
 # --------------------------
 if args.segmentation:
-    landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.listdir(cf.get('Data','input'))
-                             if os.path.isdir( os.path.join(cf.get('Data','input'), f) ) ] )
     if not os.path.isdir( maskdir ): os.makedirs( maskdir )
     if not os.path.isdir( geodir ): os.makedirs( geodir )
     from pyris import segment_all
@@ -162,7 +163,6 @@ if args.clean_mask is not None:
             print; print title; print '-'*len(title)
             if args.config is not None: clean_masks( f, geodir=geodir, config=cf, file_only=True )
             else: clean_masks( maskdir )
-
 
 # Skeletonization
 # ---------------
@@ -221,13 +221,13 @@ if args.migration:
 
 # Bars Position
 # -------------
-## if args.bars:
-##     from pyris import bars_detection
-##     if args.axis_files is None and args.migration_files is None and args.config is not None:
-##         if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
-##         title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
-##     elif args.axis_files is not None and args.migration_files is not None and args.config is None: 
-##         if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
-
-##     else:
-##         raise ParserException, 'bars detection requires either axis files and migration files or config'
+if args.bars:
+    from pyris import bars_detection
+    if args.axis_files is None and args.migration_files is None and args.config is not None:
+    #if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
+    title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
+    bars_detection( landsat_dirs, geodir, axisdir, migdir )
+    #elif args.axis_files is not None and args.migration_files is not None and args.config is None: 
+       #if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
+    else:
+       raise ParserException, 'bars detection requires either axis files and migration files or config'

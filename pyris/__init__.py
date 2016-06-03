@@ -49,6 +49,7 @@ __all__ = [
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
     'Thresholding', 'SegmentationIndex',
+    'Unwrapper', 'BarFinder', 'TemporalBars',
     # vector
     'AxisReader', 'ReadAxisLine',
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
@@ -432,3 +433,8 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
     plt.legend( loc='best' )
     plt.title( 'Migration rates' )
     plt.show()
+
+
+def bars_detection( landsat_dirs, geodir, axisdir, migdir ):
+    
+    
