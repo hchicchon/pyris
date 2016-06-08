@@ -6,6 +6,7 @@ from skimage import morphology as mm
 from skimage.feature import peak_local_max
 from skimage import measure as sm
 from matplotlib import pyplot as plt
+from matplotlib import gridspec
 from ..raster.segmentation import SegmentationIndex
 from ..misc.misc import GeoReference, NaNs
 
@@ -32,9 +33,9 @@ class Unwrapper( object ):
         self.theta = data[3]
         self.Cs = data[4]
         self.b = data[5]
-        self.Bend = mig[5].astype( int )
-        self.NextBend = data[6].astype( int )
-        self.Ipoints = ( np.where( data[7].astype( int )==2 )[0] ).astype( int )
+        self.Bend = mig[4].astype( int )
+        self.NextBend = mig[5].astype( int )
+        self.Ipoints = ( np.where( data[6].astype( int )==2 )[0] ).astype( int )
         self.BendIndexes = np.unique( self.Bend[ self.Bend>=0 ] )
         return None
 
@@ -52,7 +53,7 @@ class Unwrapper( object ):
         B = b / GeoTransf['PixelSize']
 
         # Transverse Axis
-        N = np.linspace( +1.0, -1.0, Npts, endpoint=True )
+        N = np.linspace( -1.0, +1.0, Npts, endpoint=True )
         self.N = N
         # Knots
         self.Xc, self.Yc = np.zeros((S.size, N.size)), np.zeros((S.size, N.size))
@@ -232,39 +233,8 @@ class BarFinder( object ):
         BIdx = np.unique( BBIdx[ BBIdx>=0 ] )
         BarBendTypeIdx = -np.ones( BIdx.size, dtype=int )
         for i, n in enumerate( BIdx ):
-            ##############################
-            ## DEBUG
-            #mask = self.unwrapper.BendIndexes==n
-            #BRS = np.zeros(self.Bars.shape)
-            #f1 = plt.figure()
-            #f2 = plt.figure()
-            #ax1 = f1.add_subplot(111)
-            #ax2 = f2.add_subplot(111)
-            #for ki, k in enumerate(self.BarIdx[ (BBIdx==n)]):
-            #    #BRS[self.Bars==k] = ki
-            #    #plt.contourf(np.where(self.Bars==k, ki, np.nan), alpha=0.5)
-            #    ax1.plot( self.unwrapper.XC[self.Contours[k][0].astype(int), self.Contours[k][1].astype(int)], self.unwrapper.YC[self.Contours[k][0].astype(int), self.Contours[k][1].astype(int)], lw=4, label=r'%s' % (ki+1) )
-            #    print ki, k, np.unique(self.Bars==k, return_counts=True)
-            #    #ax2.imshow( self.Bars, cmap='spectral', aspect='auto' )
-            #    BRS[self.Bars==k] = np.sqrt((self.Bars==k).sum())
-            #print
-            #cf = ax2.imshow(BRS, aspect='auto', cmap='spectral')
-            #plt.colorbar(cf)
-            ##plt.colorbar()
-            ###############################
             Areas =  np.asarray( [ (self.Bars==(k+1)).sum() for ki, k in enumerate(self.BarIdx[ BBIdx==n ]) ] )
             Indexes = self.BarIdx[ BBIdx==n ]
-            #print Areas
-            ##############################
-            ## DEBUG
-            ##plt.contour( np.where(self.Bars==Indexes[ Areas.argmax() ], 1, 0), [0.5] )
-            #ax1.plot( self.unwrapper.XC[self.Contours[Indexes[ Areas.argmax() ]][0].astype(int), self.Contours[Indexes[ Areas.argmax() ]][1].astype(int)],
-            #            self.unwrapper.YC[self.Contours[Indexes[ Areas.argmax() ]][0].astype(int), self.Contours[Indexes[ Areas.argmax() ]][1].astype(int)], 'ro',
-            #            lw=0.5 )
-            #ax1.set_title('%s on %s' % ( Areas.argmax(), len(Areas) ) )
-            #ax1.legend()
-            #plt.show()
-            ###############################
             BarBendTypeIdx[i] = Indexes[ Areas.argmax() ]
         return BarBendTypeIdx
 
@@ -279,8 +249,14 @@ class BarFinder( object ):
         '''Compute the contour line of each emerging bar'''
         self.Contours = []
         for n in self.BarIdx:
-            contour = sm.find_contours(self.Bars==n+1, 0.5)
+            contour = sm.find_contours( self.Bars==n+1, 0.5 )
             I, J = contour[0][:,0], contour[0][:,1]
+
+            if np.abs(I[-1]-I[0])>1:
+                _I = np.arange( I[-1], I[0], np.sign(I[0]-I[-1]) )
+                _J = np.ones( _I.size ) * J[-1]
+                I, J = np.append( I, _I ), np.append( J, _J )
+
             self.Contours.append( [I, J] )
         return self.Contours            
 
@@ -294,6 +270,75 @@ class BarFinder( object ):
         self.BarContour()
         self.MainBarBend()
         return None
+
+
+
+    def Show( self, bands ):
+
+        plt.figure()
+        gs = gridspec.GridSpec( 12, 2 )
+        ax1 = plt.subplot( gs[:1, :] ) # Colorbar
+        ax2 = plt.subplot( gs[2:, 0] ) # Topography
+        ax3 = plt.subplot( gs[2:, 1], sharex=ax2, sharey=ax2 ) # RGB        
+        GR = GeoReference( self.unwrapper.GeoTransf )
+        XC, YC = self.unwrapper.XC, self.unwrapper.YC
+        Zc = self.unwrapper.interpolate( bands['B'] )
+        ax2.imshow( bands['G'], cmap='binary', extent=GR.extent )
+        pcm = ax2.pcolormesh( XC, YC, Zc, cmap='Spectral_r', alpha=0.75 )
+        ax2.contour( XC, YC, Zc )
+        plt.plot( XC[:,0], YC[:,0], 'k', lw=2 )
+        plt.plot( XC[:,-1], YC[:,-1], 'k', lw=2 )    
+        Zi = np.dstack( (bands['MIR'], bands['NIR'], bands['R']) )
+        ax3.imshow( Zi, extent=GR.extent )
+        cb = plt.colorbar( pcm, cax=ax1, orientation='horizontal' )
+        plt.axis('equal')
+
+        plt.figure()
+        gs = gridspec.GridSpec( 12, 2 )
+        ax1 = plt.subplot( gs[:1, :] ) # Colorbar
+        ax2 = plt.subplot( gs[2:, 0] ) # Topography
+        ax3 = plt.subplot( gs[2:, 1], sharex=ax2, sharey=ax2 ) # RGB        
+        GR = GeoReference( self.unwrapper.GeoTransf )
+        XC, YC = self.unwrapper.XC, self.unwrapper.YC
+        Zc = self.unwrapper.interpolate( bands['B'] )
+        ax2.imshow( bands['G'], cmap='binary', extent=GR.extent )
+        pcm = ax2.pcolormesh( XC, YC, Zc, cmap='Spectral_r', alpha=0.75 )
+        ax2.contour( XC, YC, Zc )
+        plt.plot( XC[:,0], YC[:,0], 'k', lw=2 )
+        plt.plot( XC[:,-1], YC[:,-1], 'k', lw=2 )    
+        # Draw Cross Sections
+        for i in xrange(1, self.unwrapper.s.size-1, 10):
+            ax2.plot( XC[i,:], YC[i,:], 'k' )
+            ax2.text( XC[i,-1], YC[i,-1], 's=%s' % int(self.unwrapper.s[i]/self.unwrapper.b.mean()) )
+            ax3.plot( XC[i,:], YC[i,:], 'k' )
+            ax3.text( XC[i,-1], YC[i,-1], 's=%s' % int(self.unwrapper.s[i]/self.unwrapper.b.mean()) )
+        Zi = np.dstack( (bands['MIR'], bands['NIR'], bands['R']) )
+        ax3.imshow( Zi, extent=GR.extent )
+        cb = plt.colorbar( pcm, cax=ax1, orientation='horizontal' )
+        plt.axis('equal')
+    
+        plt.figure()
+        gs = gridspec.GridSpec( 60, 60 )
+        ax1 = plt.subplot( gs[7:11, :] ) # Colorbar
+        ax2 = plt.subplot( gs[15:25,:] ) # Surface
+        ax3 = plt.subplot( gs[30:40, :], sharex=ax2 ) # Width
+        ax4 = plt.subplot( gs[48:58, :], sharex=ax2 ) # Curvature    
+        # Surface
+        pcm = ax2.pcolormesh( self.unwrapper.s/self.unwrapper.b.mean(), self.unwrapper.N, Zc.T, cmap='Spectral_r' )
+        ax2.contour( self.unwrapper.Sc, self.unwrapper.Nc, Zc.T )
+        ax2.set_ylabel( r'$n^*/B^*$' )    
+        # Colorbar
+        cb = plt.colorbar( pcm, cax=ax1, orientation='horizontal' )        
+        # Width
+        ax3.plot( self.unwrapper.s/self.unwrapper.b.mean(), self.unwrapper.b/self.unwrapper.b.mean() )
+        ax3.set_ylabel( r'$B^*/B_0^*$' )    
+        # Curvature
+        ax4.plot( self.unwrapper.s/self.unwrapper.b.mean(), self.unwrapper.Cs )
+        ax4.set_ylabel( r'$\mathcal{C^*}$' )
+        ax4.set_xlabel( r'$s^*/B_0^*$' )
+        plt.axis('tight')
+
+        plt.show()
 
     
     def __call__( self, bands, close=True, remove_small=True ):
@@ -350,7 +395,8 @@ class TemporalBars( object ):
             mask = bend_indexes==bend
 
             # Find the Dominant Bar of the Current Bend
-            ibar = Bars.BarBendIdx[ bend ]
+            try: ibar = Bars.BarBendIdx[ bend ]
+            except IndexError: continue ## ??? what's wrong here ???
             
             # Get Bar Properties
             IC, JC = Bars.Centroid[ :,ibar ]
@@ -393,14 +439,15 @@ class TemporalBars( object ):
             mask = bend_indexes==bend
 
             # Find the Dominant Bar of the Current Bend
-            ibar = Bars.BarBendIdx[ bend ]
+            try: ibar = Bars.BarBendIdx[ bend ]
+            except IndexError: continue ## ??? what's wrong here ???
             
             # Get Bar Properties
             contour = Bars.Contours[ ibar ]
             X = Bars.unwrapper.XC[ contour[0].astype(int),contour[1].astype(int) ]
             Y = Bars.unwrapper.YC[ contour[0].astype(int),contour[1].astype(int) ]
             S = Bars.unwrapper.s[ contour[0].astype(int) ]
-            N = Bars.unwrapper.N[ contour[1].astype(int) ]
+            N = -Bars.unwrapper.N[ contour[1].astype(int) ]
 
             if normalize:
                 Sbend = Bars.unwrapper.s[mask]
@@ -413,8 +460,81 @@ class TemporalBars( object ):
 
             # Get the Bend Index for the Next Time Step
             bend = bend_indexes_next[ mask ][0]
-        
-
-        # TMP
 
         return contours_IJ, contours_SN, contours_XY
+
+    def Show( self, landsat_dirs, geodir, bend=None ):
+
+        for BEND in self.IterBends():
+            if bend is not None:
+                if not BEND==bend: continue
+
+            [ contours_IJ, contours_SN, contours_XY ] = self.MainBarEvol( BEND )
+            [ centroids_IJ, centroids_SN, centroids_XY ] = self.CentroidsEvol( BEND )
+    
+            colors = [ plt.cm.Spectral_r(k) for k in np.linspace(0, 1, len(contours_SN)) ]
+            lws = np.linspace( 0.5, 2.5, len(contours_SN) )
+        
+            smin, smax = 0, 0
+            xmin, xmax = contours_XY[0][0].min(), contours_XY[0][0].max()
+            ymin, ymax = contours_XY[0][1].min(), contours_XY[0][1].max()
+            for i, (Csn, Cxy) in enumerate( zip( contours_SN, contours_XY ) ):
+                s = np.append( Csn[0], Csn[0][-1] )
+                n = np.append( Csn[1], Csn[1][-1] )
+                x = np.append( Cxy[0], Cxy[0][-1] )
+                y = np.append( Cxy[1], Cxy[1][-1] )
+                smin, smax = min( smin, s.min() ), max( smax, s.max() )
+                xmin, xmax = min( xmin, x.min() ), max( xmax, x.max() )
+                ymin, ymax = min( ymin, y.min() ), max( ymax, y.max() )
+
+            for i, (Csn, Cxy) in enumerate( zip( contours_SN, contours_XY ) ):
+                plt.figure()
+                gs = gridspec.GridSpec( 60, 60 )
+                ax1 = plt.subplot( gs[5:55,:23] ) # SN
+                ax2 = plt.subplot( gs[5:55,28:51] ) # XY
+
+                geofile = sorted(os.listdir(geodir))[i]
+                name = ''.join((os.path.splitext( os.path.basename( geofile ) )[0].split('_')))
+                found = False
+                for landsat_dir in landsat_dirs:
+                    lname = os.path.splitext(os.path.split(landsat_dir)[-1])[0][9:16]
+                    if name == lname:
+                        found = True
+                        break
+                if found == True:
+                    from ..misc import LoadLandsatData
+                    [ R, G, B, NIR, MIR ], GeoTransf = LoadLandsatData( landsat_dir )
+                    bands = { 'R' : R, 'G' : G, 'B' : B, 'NIR' : NIR, 'MIR' : MIR }                    
+                    ax2.imshow( np.dstack( (bands['MIR'], bands['NIR'], bands['R']) ), extent=GeoReference(GeoTransf).extent )
+
+                if i>0 and (centroids_SN[i][0]-centroids_SN[i-1][0]) > 4: continue
+                for j, (csn, cxy) in enumerate( zip( contours_SN[:i+1], contours_XY[:i+1] ) ):
+                    s = np.append( csn[0], csn[0][-1] )
+                    n = np.append( csn[1], csn[1][-1] )
+                    x = np.append( cxy[0], cxy[0][-1] )
+                    y = np.append( cxy[1], cxy[1][-1] )
+                    ax1.plot( s, n, label=r'%s' % int(self.T[j]), lw=4, c=colors[j], alpha=0.75 )
+                    ax1.fill( s, n, color=colors[j], alpha=0.5 )
+                    ax2.plot( x, y, label=r'%s' % int(self.T[j]), lw=4, c=colors[j], alpha=0.75 )
+                    ax2.fill( x, y, color=colors[j], alpha=0.5 )
+                ax1.set_xlabel( r'$s/B_0\, [-]$' )
+                ax1.set_ylabel( r'$n/B_0\, [-]$' )
+                ax2.set_xlabel( r'$x_{\mathrm{UTM}} [\mathrm{m}]$' )
+                ax2.set_ylabel( r'$y_{\mathrm{UTM}} [\mathrm{m}]$' )
+                dx, dy = xmax-xmin, ymax-ymin
+                smax = max( abs(smax), abs(smin) )
+                smin = -smax
+                ds = smax-smin
+                ax1.set_xlim( [ smin-0.2*ds, smax+0.2*ds ] )
+                ax1.set_ylim( [ -1, 1 ] )
+                ax2.set_xlim( [ xmin-dx, xmax+dx ] )
+                ax2.set_ylim( [ ymin-dy, ymax+dx ] )
+                ax1.axvline( 0, color='gray', lw=2 )
+                ax1.text( 0.05, 0.5, 'bend apex', rotation=90 )
+                ax1.text( smin-0.1*ds, 0.93, 'flow' )
+                ax1.arrow( smin-0.1*ds, 0.9, 0.2*ds, 0 )
+                ax2.legend( loc='center left', bbox_to_anchor=(1,0.5), ncol=2 )
+                plt.show()
+
+
+
