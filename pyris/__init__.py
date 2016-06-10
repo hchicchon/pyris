@@ -19,6 +19,7 @@ import os, sys
 import numpy as np
 import pickle
 from matplotlib import pyplot as plt
+from matplotlib.gridspec import GridSpec
 from skimage import morphology as mm
 from skimage.util import img_as_ubyte
 from skimage.io import imread
@@ -432,3 +433,120 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
     plt.legend( loc='best' )
     plt.title( 'Migration rates' )
     plt.show()
+
+
+def make_curve_plots( axisdir, migdir, landsat_dirs ):
+
+    # 0      1      2      3          4       5      6
+    # dx,    dy,    dz,    ICWTC,     BI,     B12,   BUD
+    # x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS, xp_PCS, yp_PCS
+
+    axisfiles = sorted( os.listdir( axisdir ) )
+    migfiles = sorted( os.listdir( migdir ) )
+    A, M, T = [], [], []
+    for axis, mig in zip( axisfiles, migfiles ):
+        afile = os.path.join( axisdir, axis )
+        mfile = os.path.join( migdir, mig )
+        T.append( int(os.path.splitext(axis)[0].split('_')[0]) )
+        A.append( load(afile) ), M.append( load(mfile) )
+
+    BENDS = np.unique( M[0][4][ M[0][4]>=0 ] ).astype( int )
+
+    BENDS = [ 90, 100 ]
+
+    for BEND in BENDS:
+
+        b = BEND
+
+        X, Y, NU, DELTA, SIGMA = [], [], [], [], []
+        for i in xrange( len(M) ):
+
+            a, m = A[i], M[i]
+            
+            bend = m[4]==b
+
+            if b == -1 or np.all( np.isnan( m[2][ bend ] ) ): break
+
+            x = a[0][ bend ]
+            y = a[1][ bend ]
+            s = a[2][ bend ]
+            t = a[3][ bend ]
+            c = m[3][ bend ]
+            w = a[5][ bend ]
+
+            sigma = ( s[-1]-s[0] ) / ( np.sqrt( (x[-1]-x[0])**2 + (y[-1]-y[0])**2 ) )
+            delta = ((w.max()-w.min())/2) / w.mean()
+            nu = np.amax(c) * w.mean()
+            
+            X.append(x), Y.append(y)
+            NU.append(nu), DELTA.append(delta), SIGMA.append(sigma)
+
+            b = m[5][ bend ][0]
+        
+        if len( X ) <= 4: continue
+
+        from misc import LoadLandsatData, GeoReference
+        for d in [_d for _d in landsat_dirs if not 'LC8' in _d]:
+            if str(T[i]) in d:
+                break
+        LLD = LoadLandsatData( d )
+        GR = GeoReference(LLD[-1])
+        RGB = np.dstack((LLD[0][4], LLD[0][3], LLD[0][2]))
+
+        [ X, Y, NU, DELTA, SIGMA ] = map( np.asarray, [ X, Y, NU, DELTA, SIGMA ] )
+
+        for ifilter in xrange( 20 ):
+            SIGMA[1:-1] = ( 2*SIGMA[1:-1] + SIGMA[:-2] + SIGMA[2:] ) / 4
+            NU[1:-1] = ( 2*NU[1:-1] + NU[:-2] + NU[2:] ) / 4
+            DELTA[1:-1] = ( 2*DELTA[1:-1] + DELTA[:-2] + DELTA[2:] ) / 4
+
+
+        plt.figure()
+        gs = GridSpec( 2,3 )
+        ax11 = plt.subplot( gs[0,0] )
+        ax12 = plt.subplot( gs[0,1] )
+        ax13 = plt.subplot( gs[0,2] )
+        ax21 = plt.subplot( gs[1,0] )
+        ax22 = plt.subplot( gs[1,1] )
+        ax23 = plt.subplot( gs[1,2] )
+        colors = [ plt.cm.jet(x) for x in np.linspace( 0, 1, len(X) ) ]
+        lws = np.linspace( 2, 4, len(X) )
+        ax11.imshow( RGB, extent=GR.extent )
+        xmax, xmin = X[0].max(), X[0].min()
+        ymax, ymin = Y[0].max(), Y[0].min()
+        for i in xrange( len(X) ):
+            ax11.plot( X[i], Y[i], c=colors[i], lw=lws[i] )
+            ax12.plot( T[i], SIGMA[i], 'o', c=colors[i], lw=lws[i], markersize=10 )
+            ax21.plot( SIGMA[i], NU[i], 'o', c=colors[i], markersize=10 )
+            ax22.plot( SIGMA[i], DELTA[i], 'o', c=colors[i], markersize=10 )
+            ax23.plot( NU[i], DELTA[i], 'o', c=colors[i], markersize=10 )
+            xmax, xmin = max( xmax, X[i].max() ), min( xmin, X[i].min() )
+            ymax, ymin = max( ymax, Y[i].max() ), min( ymin, Y[i].min() )
+        ax12.plot( T[:len(SIGMA)], SIGMA, 'k' )
+        ax21.plot( SIGMA, NU, 'k' )
+        ax22.plot( SIGMA, DELTA, 'k' )
+        ax23.plot( NU, DELTA, 'k' )
+        ax11.set_xlabel( r'$x$' )
+        ax11.set_ylabel( r'$y$' )
+        ax12.set_xlabel( r'year' )
+        ax12.set_ylabel( r'$\sigma$' )
+        ax21.set_xlabel( r'$\sigma$' )
+        ax21.set_ylabel( r'$\nu$' )
+        ax22.set_xlabel( r'$\sigma$' )
+        ax22.set_ylabel( r'$\delta$' )
+        ax23.set_xlabel( r'$\nu$' )
+        ax23.set_ylabel( r'$\delta$' )
+        dx = xmax+0.25*(xmax-xmin) - xmin-0.25*(xmax-xmin)
+        dy = ymax+0.25*(ymax-ymin) - ymin-0.25*(ymax-ymin)
+        dyx = (dy - dx)/2
+        ax11.set_xlim([xmin-0.25*(xmax-xmin), xmax+0.25*(xmax-xmin)])
+        ax11.set_ylim([ymin-0.25*(ymax-ymin), ymax+0.25*(ymax-ymin)])
+        figManager = plt.get_current_fig_manager()
+        figManager.window.showMaximized()
+        plt.suptitle( 'Bend %d' % BEND )
+        for ax in [ax11, ax12, ax13, ax21, ax22, ax23]:
+            ax.xaxis.set_major_locator( plt.NullLocator() )
+            ax.yaxis.set_major_locator( plt.NullLocator() )
+        print ax12.get_xlim(), ax12.get_ylim()
+        plt.show()
+

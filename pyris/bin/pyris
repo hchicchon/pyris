@@ -231,3 +231,9 @@ if args.migration:
 
 ##     else:
 ##         raise ParserException, 'bars detection requires either axis files and migration files or config'
+
+
+from pyris import make_curve_plots
+landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.listdir(cf.get('Data','input'))
+                             if os.path.isdir( os.path.join(cf.get('Data','input'), f) ) ] )
+make_curve_plots( axisdir, migdir, landsat_dirs )
