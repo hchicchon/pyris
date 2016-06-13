@@ -49,6 +49,7 @@ __all__ = [
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
     'Thresholding', 'SegmentationIndex',
+    'Unwrapper', 'BarFinder', 'TemporalBars',
     # vector
     'AxisReader', 'ReadAxisLine',
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
@@ -391,7 +392,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
 
         # Save Axis Properties
         print 'saving main channel data...'
-        np.save( axisfile, ( x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS, xp_PCS, yp_PCS ) )
+        save( axisfile, ( x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS, xp_PCS, yp_PCS ) )
 
 
 def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wavelets=False, filter_multiplier=0.33 ):
@@ -413,8 +414,8 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
     plt.figure()
     #bend = 20
     for i, f1 in enumerate( axisfiles ):
-        a1 = np.load(f1)
-        m1 = np.load( os.path.join(migdir, os.path.basename( f1 )) )
+        a1 = load(f1)
+        m1 = load( os.path.join(migdir, os.path.basename( f1 )) )
         name = '/'.join( (os.path.splitext(os.path.basename(f1))[0].split('_')[::-1]) )
         x, y, s = a1[columns[0]], a1[columns[1]], a1[2]
         dx, dy = m1[0], m1[1]
@@ -432,3 +433,51 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
     plt.legend( loc='best' )
     plt.title( 'Migration rates' )
     plt.show()
+
+
+def bars_detection( landsat_dirs, geodir, axisdir, migdir ):
+    
+    axis_files = [ os.path.join( axisdir, f ) for f in sorted( os.listdir( axisdir ) ) ]
+    found_files = []
+    bars = TemporalBars()
+    
+    for i_file, axis_file in enumerate( axis_files ):
+        basename = os.path.splitext( os.path.split( axis_file )[-1] )[0]
+        geo_file = os.path.join( geodir, '.'.join((basename,'p')) )
+        mig_file = os.path.join( migdir, os.path.split( axis_file )[-1] )
+        year, day = [ int(v) for v in basename.split('_') ]
+        time = ( year + day/365 )
+        name = '%s%s' % ( year, day )
+        landsat_found = False
+        for landsat_dir in landsat_dirs:
+            lname = os.path.splitext(os.path.split(landsat_dir)[-1])[0][9:16]
+            if name == lname:
+                landsat_found = True
+                break
+        if not landsat_found:
+            print 'Landsat data not found for %s. Skipping...' % basename
+            continue
+        found_files.append( axis_file )
+
+        #if i_file > 0: continue
+
+        print 'Processing file %s' % basename
+
+        GeoTransf = pickle.load( open(geo_file) )
+        axis = load( axis_file )
+        mig = load( mig_file )
+
+         # ReLoad Landsat Data
+        [ R, G, B, NIR, MIR ], GeoTransf = LoadLandsatData( landsat_dir )
+        bands = { 'R' : R, 'G' : G, 'B' : B, 'NIR' : NIR, 'MIR' : MIR }
+
+        # Compute Transformed Coordinates and Interpolate Band
+        unwrapper = Unwrapper( axis, mig, GeoTransf )
+        unwrapper.unwrap( R.shape )
+    
+        # Find and Clafssify Bars
+        barfinder = BarFinder( unwrapper )
+        barfinder( bands, close=False, remove_small=False )
+        #barfinder.Show( bands )
+        bars.GetFinder( time, barfinder )
+    bars.Show( landsat_dirs, geodir )
