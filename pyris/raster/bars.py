@@ -402,20 +402,23 @@ class TemporalBars( object ):
             IC, JC = Bars.Centroid[ :,ibar ]
             X = Bars.unwrapper.XC[ IC, JC ]
             Y = Bars.unwrapper.YC[ IC, JC ]
-            S = Bars.unwrapper.s[ JC ]
-            N = Bars.unwrapper.N[ JC ]
+            S = Bars.unwrapper.s[ IC ]
+            N = Bars.unwrapper.N[ -JC ]
 
             if normalize:
-                Sbend = Bars.unwrapper.s[mask]
-                S -= Sbend[ int( Sbend.size / 2 ) ] # Relative to "Bend Apex" (FIXME: use proper apex)
-                S /= ( Sbend[-1] - Sbend[0] ) # Normalize to Bend Half-Length
+                Sbend = Bars.unwrapper.s[ mask ]
+                SS = S # Bend-Normalized S
+                SS -= Sbend[ int( Sbend.size / 2 ) ] # Relative to "Bend Apex" (FIXME: use proper apex)
+                SS /= (0.5*( Sbend[-1] - Sbend[0] )) # Normalize to Bend Half-Length
 
             centroids_IJ.append( [ IC, JC ] )
             centroids_XY.append( [ X, Y ] )
-            centroids_SN.append( [ S, N ] )
+            centroids_SN.append( [ SS, N ] )
 
             # Get the Bend Index for the Next Time Step
             bend = bend_indexes_next[ mask ][0]
+
+        self.centroids_IJ, self.centroids_XY, self.centroids_SN = centroids_IJ, centroids_XY, centroids_SN
 
         return centroids_IJ, centroids_SN, centroids_XY
 
@@ -453,7 +456,7 @@ class TemporalBars( object ):
                 Sbend = Bars.unwrapper.s[mask]
                 S -= Sbend[ int( Sbend.size / 2 ) ] # Relative to "Bend Apex" (FIXME: use proper apex)
                 S /= ( 0.5*(Sbend[-1] - Sbend[0]) ) # Normalize to Bend Half-Length
-
+            
             contours_IJ.append( [ contour[0], contour[1] ] )
             contours_XY.append( [ X, Y ] )
             contours_SN.append( [ S, N ] )
@@ -461,7 +464,10 @@ class TemporalBars( object ):
             # Get the Bend Index for the Next Time Step
             bend = bend_indexes_next[ mask ][0]
 
+        self.contours_IJ, self.contours_XY, self.contours_SN = contours_IJ, contours_XY, contours_SN
+
         return contours_IJ, contours_SN, contours_XY
+
 
     def Show( self, landsat_dirs, geodir, bend=None ):
 
@@ -469,8 +475,11 @@ class TemporalBars( object ):
             if bend is not None:
                 if not BEND==bend: continue
 
-            [ contours_IJ, contours_SN, contours_XY ] = self.MainBarEvol( BEND )
-            [ centroids_IJ, centroids_SN, centroids_XY ] = self.CentroidsEvol( BEND )
+            if hasattr( self, contours_IJ ): [ centroids_IJ, centroids_SN, centroids_XY ] = [ self.centroids_IJ, self.centroids_SN, self.centroids_XY ]
+            else: [ contours_IJ, contours_SN, contours_XY ] = self.MainBarEvol( BEND )
+
+            if hasattr( self, centroids_IJ): [ centroids_IJ, centroids_SN, centroids_XY ] = [ self.centroids_IJ, self.centroids_SN, self.centroids_XY ]
+            else: [ centroids_IJ, centroids_SN, centroids_XY ] = self.CentroidsEvol( BEND )
     
             colors = [ plt.cm.Spectral_r(k) for k in np.linspace(0, 1, len(contours_SN)) ]
             lws = np.linspace( 0.5, 2.5, len(contours_SN) )

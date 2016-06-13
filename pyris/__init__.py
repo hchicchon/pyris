@@ -435,7 +435,7 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
     plt.show()
 
 
-def bars_detection( landsat_dirs, geodir, axisdir, migdir ):
+def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
     
     axis_files = [ os.path.join( axisdir, f ) for f in sorted( os.listdir( axisdir ) ) ]
     found_files = []
@@ -459,7 +459,7 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir ):
             continue
         found_files.append( axis_file )
 
-        #if i_file > 0: continue
+        if i_file > 0: continue
 
         print 'Processing file %s' % basename
 
@@ -478,6 +478,15 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir ):
         # Find and Clafssify Bars
         barfinder = BarFinder( unwrapper )
         barfinder( bands, close=False, remove_small=False )
-        #barfinder.Show( bands )
         bars.GetFinder( time, barfinder )
-    bars.Show( landsat_dirs, geodir )
+
+    # Dump Results
+    for ibend in bars.IterBends():
+        _, SN, _ = bars.CentroidsEvol( ibend )
+        
+        [s, n] = np.asarray( SN ).T
+        name = os.path.join( bardir, '.'.join(( 'bend_%04d' % ibend, 'npy' )) )
+        save( name, np.vstack((s, n)) )
+
+    if show: bars.Show( landsat_dirs, geodir )
+

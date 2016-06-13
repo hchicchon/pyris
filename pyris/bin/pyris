@@ -63,9 +63,7 @@ parser.add_argument( '--output-dir', default='migration_output', help='directory
 parser.add_argument( '--filter-multiplier', default=0.33, help='multiplier of the wavelet filter' )
 # Bars Position
 parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
-#parser.add_argument( '--landsat-dirs', nargs='+', help='where landsat are stored' )
-#parser.add_argument( '--migration-files', nargs='+', help='if called as standalone, requires migration-files and axis-files' )
-#parser.add_argument( '--free-forced', action='store_true', help='free and forced bars are to be detected' )
+parser.add_argument( '--show', action='store_true', help='show bars detection' )
 
 # Parse Arguments
 args = parser.parse_args()
@@ -135,6 +133,7 @@ if args.config is not None:
     skeldir = os.path.join( cf.get( 'Data', 'output' ), 'skeleton' )
     axisdir = os.path.join( cf.get( 'Data', 'output' ), 'axis' )
     migdir = os.path.join( cf.get( 'Data', 'output' ), 'migration' )
+    bardir = os.path.join( cf.get( 'Data', 'output' ), 'bars' )
     landsat_dirs = sorted( [ os.path.join(cf.get('Data','input'), f) for f in os.listdir(cf.get('Data','input'))
                              if os.path.isdir( os.path.join(cf.get('Data','input'), f) ) ] )
 
@@ -222,7 +221,8 @@ if args.migration:
 # Bars Position
 # -------------
 if args.bars:
+    if not os.path.isdir( bardir ): os.makedirs( bardir )
     from pyris import bars_detection
     #if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
     title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
-    bars_detection( landsat_dirs, geodir, axisdir, migdir )
+    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=args.show )
