@@ -42,6 +42,9 @@ parser.add_argument( '-i', '--init', action='store_true', help='initialize a con
 parser.add_argument( '-s', '--set', nargs='*', action=StoreDictSet, type=str, help='set variable in config file' )
 parser.add_argument( '--select-white-mask', type=str, help='interactively draw white masks from landsat data' )
 parser.add_argument( '--select-black-mask', type=str, help='interactively draw black masks from landsat data' )
+# Merge Landsat Folders
+parser.add_argument( '--merge', nargs='+', help='landsat folders to be merged together (requires gdal_merge)' )
+parser.add_argument( '--output', type=str, help='where merged landsat are to be stored' )
 # Segmentation
 parser.add_argument( '-S', '--segmentation', action='store_true', help='perform segmentation of all the landsat folders' )
 parser.add_argument( '--label', type=str, help='if auto, pyris will try to label masks by itself. other options are max and all' )
@@ -83,11 +86,36 @@ else:
                 print '\n[%s]' % section
                 for option in cf.options( section ):
                     print '%s = %s' % ( option, cf.get( section, option ) )
+    elif args.merge is not None:
+        pass
     else:
         if args.axis_files is None and args.axis_dir is None:
             e = 'Too few arguments. Either <config> or <axis files> must be given\n'
             parser.print_help()
             raise ParserException, e
+
+# Merge Landsat Files
+# -------------------
+if args.merge is not None:
+    # WARNING!! This only works on linux! ## FIXME!
+    import subprocess
+    p = subprocess.Popen( ['which', 'gdal_merge.py'], stdout=subprocess.PIPE )
+    path, gdal_merge = os.path.split( p.communicate()[0].strip() )
+    if gdal_merge == '': raise ImportError, 'gdal_merge.py not found'
+    if args.output == os.path.split( args.merge[0] )[0]: raise ValueError, 'Please select a different path for the output'
+    if not os.path.isdir( args.output ): os.mkdir( args.output )
+    sys.path.append( path )
+    exec( 'from %s import main as merge' % os.path.splitext( gdal_merge )[0] )
+    for i in xrange(1,6):
+        dirs = [ dir[:-1] if dir.endswith('/') else dir for dir in args.merge ]
+        odir = os.path.join( args.output, os.path.basename(dirs[0]) )
+        if not os.path.isdir( odir ): os.mkdir( odir )
+        ofile = os.path.join( odir, os.path.basename(dirs[0])+'_B%d.TIF' % i )
+        merge_args = [ 'gdal_merge.py' ]
+        merge_args += [ os.path.join( arg, os.path.basename(arg)+'_B%d.TIF' % i ) for arg in dirs ]
+        merge_args += [ '-o', ofile, '-n', '0' ]
+        print 'Merging band %d...' % i
+        merge( merge_args )
 
 # Individual Settings
 # -------------------
