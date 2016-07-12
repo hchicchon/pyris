@@ -106,7 +106,7 @@ if args.merge is not None:
     if not os.path.isdir( args.output ): os.mkdir( args.output )
     sys.path.append( path )
     exec( 'from %s import main as merge' % os.path.splitext( gdal_merge )[0] )
-    for i in xrange(1,6):
+    for i in xrange(1,7):
         dirs = [ dir[:-1] if dir.endswith('/') else dir for dir in args.merge ]
         odir = os.path.join( args.output, os.path.basename(dirs[0]) )
         if not os.path.isdir( odir ): os.mkdir( odir )
