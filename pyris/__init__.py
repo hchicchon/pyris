@@ -162,7 +162,7 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
 
         # Set Dimensions
         pixel_width = config.getfloat('Data', 'channel_width') / GeoTransf['PixelSize'] # Channel width in Pixels
-        radius = 10 * pixel_width # Circle Radius for Local Thresholding
+        radius = 2 * pixel_width # Circle Radius for Local Thresholding
 
         # Compute Mask
         print 'computing mask...'
