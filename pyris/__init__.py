@@ -294,6 +294,13 @@ def skeletonize_all( maskdir, skeldir, config ):
         skel, dist = Skeletonize( np.where(mask>0,1,0).astype( int ) ) # Compute Axis and Distance
         labelled_skel = skel.astype(int) * mask.astype(int)
 
+        # Apply Brute-Force cleaning
+        skel = skel.astype( int )
+        skel[ dist==1 ] = 0
+        skelabs, nsl = ndimage.measurements.label( skel, structure=np.ones((3,3)) )
+        for sl in xrange(1,nsl+1):
+            if (skelabs==sl).sum() <= 500: skel[ skelabs==sl ] = 0
+
         # Pruning
         print 'pruning n=%d labelled elements...' % num_features
         pruned = np.zeros( mask.shape, dtype=int )
