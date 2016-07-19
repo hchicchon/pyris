@@ -475,10 +475,10 @@ class TemporalBars( object ):
             if bend is not None:
                 if not BEND==bend: continue
 
-            if hasattr( self, contours_IJ ): [ centroids_IJ, centroids_SN, centroids_XY ] = [ self.centroids_IJ, self.centroids_SN, self.centroids_XY ]
+            if hasattr( self, 'contours_IJ' ): [ contours_IJ, contours_SN, contours_XY ] = [ self.contours_IJ, self.contours_SN, self.contours_XY ]
             else: [ contours_IJ, contours_SN, contours_XY ] = self.MainBarEvol( BEND )
 
-            if hasattr( self, centroids_IJ): [ centroids_IJ, centroids_SN, centroids_XY ] = [ self.centroids_IJ, self.centroids_SN, self.centroids_XY ]
+            if hasattr( self, 'centroids_IJ' ): [ centroids_IJ, centroids_SN, centroids_XY ] = [ self.centroids_IJ, self.centroids_SN, self.centroids_XY ]
             else: [ centroids_IJ, centroids_SN, centroids_XY ] = self.CentroidsEvol( BEND )
     
             colors = [ plt.cm.Spectral_r(k) for k in np.linspace(0, 1, len(contours_SN)) ]

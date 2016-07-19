@@ -115,7 +115,9 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
     '''
     to_skip = []
     # Iterate over Landsat Directories
-    for landsat in landsat_dirs:
+    yearday = [int(os.path.split(landsat)[-1][9:16]) for landsat in landsat_dirs]
+    yd, ldirs = [list(x) for x in zip(*sorted(zip(yearday, landsat_dirs), key=lambda pair: pair[0]))] # Sort by time
+    for landsat in ldirs:
         # input
         landsatname = os.path.basename( landsat )
         year = landsatname[9:13]
@@ -136,39 +138,34 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
 
         bands, GeoTransf = LoadLandsatData( landsat )
 
+        print 'applying BW masks...'
+
         # GeoReferencing of White and Black masks
         bw_masks_georef = GeoReference( GeoTransf )
-
-        # Apply White Mask
-        white = np.zeros( bands[0].shape, dtype=int )
-        white_masks = eval( config.get( 'Segmentation', 'white_masks' ) )
-        for s in white_masks:
-            xx, yy = bw_masks_georef.RefCurve( np.asarray(s[2:]), np.asarray(s[:2]), inverse=True )
-            sy, sx = slice( int(xx[0]), int(xx[1]) ), slice( int(yy[0]), int(yy[1]) )
-            white[ sx, sy ] = 1
 
         # Apply Black Mask
         black = np.ones( bands[0].shape, dtype=int )
         black_masks = eval( config.get( 'Segmentation', 'black_masks' ) )
         for s in black_masks:
             xx, yy = bw_masks_georef.RefCurve( np.asarray(s[2:]), np.asarray(s[:2]), inverse=True )
-            sy, sx = slice( int(xx[0]), int(xx[1]) ), slice( int(yy[0]), int(yy[1]) )
+            sy, sx = slice( max(0, int(xx[0])), min(black.shape[1],int(xx[1])) ), slice( max(0,int(yy[0])), min(int(yy[1]),black.shape[0]) )
             black[ sx, sy ] = 0
 
-        # Mark Landsat NoData
-        nanmask = np.where( bands[0]==0, 1, 0 )
-        nanmask = mm.binary_dilation( nanmask, mm.disk( 30 ) )
-        [ R, G, B, NIR, MIR ] =  [ np.where(white*black==1, band, np.nan) for band in bands ]
+        [ R, G, B, NIR, MIR, SWIR ] =  [ np.where(np.logical_or(band==0,black==0), np.nan, band) for band in bands ]
 
         # Set Dimensions
         pixel_width = config.getfloat('Data', 'channel_width') / GeoTransf['PixelSize'] # Channel width in Pixels
         radius = 2 * pixel_width # Circle Radius for Local Thresholding
-
+        
         # Compute Mask
         print 'computing mask...'
-        _, mask, _ = SegmentationIndex( R=R, G=G, B=B, NIR=NIR, MIR=MIR, index=config.get('Segmentation', 'method'), 
+        _, mask, _ = SegmentationIndex( R=R, G=G, B=B, NIR=NIR, MIR=MIR, SWIR=SWIR, index=config.get('Segmentation', 'method'), 
                                         rad=radius, method=config.get('Segmentation', 'thresholding') )
-        mask = np.where( nanmask==1, 0, mask*white*black )
+        # Mask Landsat NoData
+        print 'nodata dilation...'
+        nanmask = np.where( bands[0]==0, 1, 0 )
+        nanmask = mm.binary_dilation( nanmask, mm.disk( 30 ) )
+        mask = np.where( nanmask==1, 0, mask*black )
 
         # Image Cleaning
         print 'cleaning mask...'
@@ -338,13 +335,13 @@ def skeletonize_all( maskdir, skeldir, config ):
 
 def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
 
-    maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
+    skelfiles = sorted( [ os.path.join(skeldir, f) for f in os.listdir(skeldir) ] )
     if use_geo: geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
 
-    for ifile, maskfile in enumerate( maskfiles ):
+    for ifile, skelfile in enumerate( skelfiles ):
         # input
-        name = os.path.splitext( os.path.basename( maskfile ) )[0]
-        skelfile = os.path.join( skeldir, '.'.join(( name, 'npy' )) )
+        name = os.path.splitext( os.path.basename( skelfile ) )[0]
+        maskfile = os.path.join( maskdir, '.'.join(( name, 'npy' )) )
         # output
         axisfile = os.path.join( axisdir, '.'.join(( name, 'npy' )) )
 
@@ -475,8 +472,8 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
         mig = load( mig_file )
 
          # ReLoad Landsat Data
-        [ R, G, B, NIR, MIR ], GeoTransf = LoadLandsatData( landsat_dir )
-        bands = { 'R' : R, 'G' : G, 'B' : B, 'NIR' : NIR, 'MIR' : MIR }
+        [ R, G, B, NIR, MIR, SWIR ], GeoTransf = LoadLandsatData( landsat_dir )
+        bands = { 'R' : R, 'G' : G, 'B' : B, 'NIR' : NIR, 'MIR' : MIR, 'SWIR' : SWIR }
 
         # Compute Transformed Coordinates and Interpolate Band
         unwrapper = Unwrapper( axis, mig, GeoTransf )

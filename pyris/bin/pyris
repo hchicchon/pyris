@@ -106,13 +106,17 @@ if args.merge is not None:
     if not os.path.isdir( args.output ): os.mkdir( args.output )
     sys.path.append( path )
     exec( 'from %s import main as merge' % os.path.splitext( gdal_merge )[0] )
-    for i in xrange(1,7):
+    for i in xrange(1,8):
         dirs = [ dir[:-1] if dir.endswith('/') else dir for dir in args.merge ]
         odir = os.path.join( args.output, os.path.basename(dirs[0]) )
         if not os.path.isdir( odir ): os.mkdir( odir )
         ofile = os.path.join( odir, os.path.basename(dirs[0])+'_B%d.TIF' % i )
         merge_args = [ 'gdal_merge.py' ]
-        merge_args += [ os.path.join( arg, os.path.basename(arg)+'_B%d.TIF' % i ) for arg in dirs ]
+        for arg in dirs:
+            pattern = '_B%d.TIF' % i
+            if i==6 and not os.path.isfile( os.path.join( arg, os.path.basename(arg)+pattern ) ):
+                pattern = pattern.replace('.TIF', '_VCID_1.TIF')
+            merge_args += [ os.path.join( arg, os.path.basename(arg)+pattern ) ]
         merge_args += [ '-o', ofile, '-n', '0' ]
         print 'Merging band %d...' % i
         merge( merge_args )

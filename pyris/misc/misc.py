@@ -160,13 +160,13 @@ class interactive_mask( object ):
 
 def LoadLandsatData( dirname ):
     '''Load Relevant Bands for the Current Landsat Data'''
-    if os.path.split(dirname)[-1].startswith('LC8'): bidx = range( 2, 7 )
-    else: bidx = range( 1, 6 )
+    if os.path.split(dirname)[-1].startswith('LC8'): bidx = range( 2, 8 )
+    else: bidx = range( 1, 6 ) + [7]
     base = os.path.join( dirname, os.path.basename(dirname) )
     ext = '.TIF'
     bnames = [ ('_B'.join(( base, '%d' % i )))+ext for i in bidx ]
-    [ B, G, R, NIR, MIR ] = [ imread( band ) for band in bnames ]
-    bands = [ R, G, B, NIR, MIR ]
+    [ B, G, R, NIR, MIR, SWIR ] = [ imread( band ) for band in bnames ]
+    bands = [ R, G, B, NIR, MIR, SWIR ]
     geo = gdal.Open( bnames[0] )
     GeoTransf = {    
         'PixelSize' : abs( geo.GetGeoTransform()[1] ),

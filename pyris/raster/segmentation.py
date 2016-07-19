@@ -23,12 +23,13 @@ def Thresholding( rgb, band=None ):
 
 def SegmentationIndex( *args, **kwargs ):
     '''Apply Index'''
+
     R = kwargs['R'].astype( float )
     G = kwargs['G'].astype( float )
     B = kwargs['B'].astype( float )
     NIR = kwargs.pop( 'NIR', np.full(R.shape,np.nan) ).astype( float )
     MIR = kwargs.pop( 'MIR', np.full(R.shape,np.nan) ).astype( float )
-    Bawei = kwargs.pop( 'Bawei', np.full(R.shape,np.nan) ).astype( float )
+    SWIR = kwargs.pop( 'SWIR', np.full(R.shape,np.nan) ).astype( float )
     index = kwargs.pop( 'index', None )
     rad = kwargs.pop( 'radius', 20 )
     method = kwargs.pop( 'method', 'local' )
@@ -37,24 +38,36 @@ def SegmentationIndex( *args, **kwargs ):
         IDX =  (NIR - R) / (NIR + R)
     elif index == 'MNDWI':
         IDX =  (G - MIR) / (G + MIR)
+    elif index == 'MIX':
+        IDX = (NIR - R) / (NIR + R)
+        IDXX = (G - MIR) / (G + MIR)
+        IDXXX = SWIR
     elif index == 'AWEI':
         raise NotImplementedError
         IDX =  4 * ( G - MIR ) - ( 0.25*NIR + 2.75*Bawei ) # TODO: verify
     else:
         err = 'Index %s not recognized' % IDX
         raise ValueError, err
-    
     # Apply Local Otsu's Method
+    selem = mm.disk( rad )
     globthresh = threshold_otsu( IDX[np.isfinite(IDX)] )
+
+    if index=='MIX': globthreshX = threshold_otsu( IDXX[np.isfinite(IDXX)] )
+
     if method == 'local':
         print "applying local Otsu method - this may require some time... ", 
-        selem = mm.disk( rad )
-        thresh = rank.otsu( img_as_ubyte(IDX), selem )
+        thresh = rank.otsu( img_as_ubyte(IDX), selem ).astype(float)
+        threshX = rank.otsu( img_as_ubyte(IDXX), selem ).astype(float)
         print 'done'
     else:
         thresh = globthresh
-    if index == 'NDVI': MASK = img_as_ubyte(IDX) <= thresh
-    else: MASK = img_as_ubyte(IDX) >= thresh
+        threshX = globthreshX
+    threshXX = 90
+
+    if index == 'NDVI': MASK = IDX <= thresh
+    elif index == 'MIX': #MASK = ( mm.binary_closing(IDX<=thresh, mm.disk(0.1*rad)) ) * ( mm.binary_dilation(IDXX>=threshX,mm.disk(0.5*rad)) )
+        MASK = np.logical_or( ( IDX<=thresh ) * ( mm.binary_dilation(IDXX>=threshX,mm.disk(0.3*rad)) ), IDXXX>threshXX)
+    else: MASK = IDX >= thresh
 
     return IDX, MASK.astype( int ), globthresh
 
