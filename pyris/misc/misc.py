@@ -67,13 +67,13 @@ class GeoReference( object ):
     def RefCurve( self, X, Y, inverse=False ):
         X, Y = np.asarray(X), np.asarray(Y)
         if inverse:
-            Cx = ( X - self.extent[0] ) / self.GeoTransf['PixelSize']
-            Cy = -( Y - self.extent[3] ) / self.GeoTransf['PixelSize']
+            Cx = ( X - self.GeoTransf['X'] ) / self.GeoTransf['PixelSize']
+            Cy = -( Y - self.GeoTransf['Y'] ) / self.GeoTransf['PixelSize']
             return Cx, Cy
         else:
             self.Cx, self.Cy = X, Y
-            self.CX = self.extent[0] + self.Cx*self.GeoTransf['PixelSize']
-            self.CY = self.extent[3] - self.Cy*self.GeoTransf['PixelSize']
+            self.CX = self.GeoTransf['X'] + self.Cx*self.GeoTransf['PixelSize']
+            self.CY = self.GeoTransf['Y'] - self.Cy*self.GeoTransf['PixelSize']
             return self.CX, self.CY
 
 

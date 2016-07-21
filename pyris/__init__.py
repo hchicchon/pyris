@@ -482,6 +482,7 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
         # Find and Clafssify Bars
         barfinder = BarFinder( unwrapper )
         barfinder( bands, close=False, remove_small=False )
+        #barfinder.Show( bands )
         bars.GetFinder( time, barfinder )
 
     # Dump Results
