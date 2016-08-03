@@ -157,9 +157,9 @@ class AxisReader( object ):
                         print 'channel junction at ', i0, j0, 'n branches %d - ' % len( pos ), \
                             'level of recursion: %d' % ( self.call_depth )
 
-                    jncsl = np.zeros( len( pos ) ) # Total Lengths of the Following Branches at Junction
-                    jncsw = np.zeros( len( pos ) ) # Average Width of the Following Branches at Junction
-                    rdepths = np.zeros( len( pos ), dtype=int )
+                    jncsl = [] # Total Lengths of the Following Branches at Junction
+                    jncsw = [] # Average Width of the Following Branches at Junction
+                    rdepths = []
                     self.GetJunction( N )                    
                     axijs = []
 
@@ -185,9 +185,13 @@ class AxisReader( object ):
                         if len(axij[0])>10 and np.sqrt( (x1-x0)**2 + (y1-y0)**2) < 3: continue
                         
                         axijs.append( axij ) # List of recursive AxisReader instances
-                        jncsl[ij] = axij[2].size # Total path length
-                        jncsw[ij] = axij[2].mean() # Total path average width
-                        rdepths[ij] = axr.call_depth # Total level of recursion
+                        jncsl.append( axij[2].size ) # Total path length
+                        jncsw.append( axij[2].mean() ) # Total path average width
+                        rdepths.append(axr.call_depth ) # Total level of recursion
+
+                    jncsl, jncsw, rdepths = map( np.asarray, (jncsl,jncsw,rdepths) )
+
+                    if len(axijs) == 0: break # I could get a Zero sometimes but that's ok (only going backward on bifos)
 
                     if self.method == 'length':
                         IDX = jncsl.argmax()
@@ -195,15 +199,15 @@ class AxisReader( object ):
                         IDX = jncsw.argmax()
                     elif self.method == 'std':
                         # Length Control
-                        idx_to_rm = []
-                        for ij in xrange( len(axijs) ):
-                            jmin = jncsl.argmin()
-                            jmax = jncsl.argmax()
-                            if jncsl[jmin]<0.75*jncsl[jmax]:
-                                # If a branch is much shorter than another one, forget about it
-                                idx_to_rm.append( jmin )
-                        #del axijs[ idx_to_rm ] # This is a list
-                        axijs[:] = [ axijs[k] for k, elem in enumerate(axijs) if not k in idx_to_rm ]
+                        try:idx_to_rm = np.where( jncsl<0.75*jncsl.max() )[0]
+                        except:
+                            from matplotlib import pyplot as plt
+                            plt.figure()
+                            plt.imshow(self.hits, cmap='spectral', interpolation='none')
+                            plt.plot(J[-1], I[-1], 'ro')
+                            plt.show()
+                            
+                        axijs = [ elem for k,elem in enumerate(axijs) if k not in idx_to_rm ]
                         jncsl = np.delete( jncsl, idx_to_rm )
                         jncsw = np.delete( jncsw, idx_to_rm )
                         rdepths = np.delete( rdepths, idx_to_rm )

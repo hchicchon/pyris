@@ -5,6 +5,7 @@ import matplotlib as mpl
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
 from skimage.io import imread
+from skimage.morphology import closing, disk
 import gdal
 import warnings
 
@@ -158,15 +159,27 @@ class interactive_mask( object ):
         return self.georeference( masks )
 
 
-def LoadLandsatData( dirname ):
+def LoadLandsatData( dirname, L7correction=True ):
     '''Load Relevant Bands for the Current Landsat Data'''
-    if os.path.split(dirname)[-1].startswith('LC8'): bidx = range( 2, 8 )
+    if os.path.split(dirname)[-1].startswith( 'LC8' ): bidx = range( 2, 8 )
     else: bidx = range( 1, 6 ) + [7]
     base = os.path.join( dirname, os.path.basename(dirname) )
     ext = '.TIF'
     bnames = [ ('_B'.join(( base, '%d' % i )))+ext for i in bidx ]
     [ B, G, R, NIR, MIR, SWIR ] = [ imread( band ) for band in bnames ]
     bands = [ R, G, B, NIR, MIR, SWIR ]
+
+    if L7correction and os.path.split(dirname)[-1].startswith( 'LE7' ):
+        print 'Applying greyscale closing to missing data in Landsat 7 bands...'
+        for i in xrange(len( bands ) ):
+            bi = bands[i].copy()
+            bands[i] = closing( bands[i], disk(8) )
+            #plt.figure()
+            #plt.imshow(bands[i], cmap='RdYlBu_r')
+            #plt.figure()
+            #plt.imshow(np.where(bi>0,bands[i],np.nan), cmap='RdYlBu_r')
+            #plt.show()
+
     geo = gdal.Open( bnames[0] )
     GeoTransf = {    
         'PixelSize' : abs( geo.GetGeoTransform()[1] ),

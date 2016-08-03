@@ -38,6 +38,8 @@ def SegmentationIndex( *args, **kwargs ):
         IDX =  (NIR - R) / (NIR + R)
     elif index == 'MNDWI':
         IDX =  (G - MIR) / (G + MIR)
+    elif index == 'BAR':
+        IDX = SWIR
     elif index == 'MIX':
         IDX = (NIR - R) / (NIR + R)
         IDXX = (G - MIR) / (G + MIR)
@@ -65,8 +67,17 @@ def SegmentationIndex( *args, **kwargs ):
             threshX = globthreshX
             threshXX = 90
 
+    #from matplotlib import pyplot as plt
+    #plt.figure()
+    #plt.imshow(SWIR, cmap='spectral', interpolation='none')
+    #plt.colorbar()
+    #plt.contour( IDX>thresh, 1 )
+    #plt.title('%f' % thresh)
+    #plt.axis('tight')
+    #plt.show()
+
     if index == 'NDVI': MASK = IDX <= thresh
-    elif index == 'MIX': #MASK = ( mm.binary_closing(IDX<=thresh, mm.disk(0.1*rad)) ) * ( mm.binary_dilation(IDXX>=threshX,mm.disk(0.5*rad)) )
+    elif index == 'MIX':
         MASK = np.logical_or( ( IDX<=thresh ) * ( mm.binary_dilation(IDXX>=threshX,mm.disk(0.3*rad)) ), IDXXX>threshXX)
     else: MASK = IDX >= thresh
 
