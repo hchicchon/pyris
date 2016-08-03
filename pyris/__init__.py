@@ -495,18 +495,9 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         #barfinder.Show( bands )
         bars.GetFinder( time, barfinder )
 
-        #X, Y, A = [] ,[], []
-        #for k in xrange(len(barfinder.Area)):
-        #    x, y, a = barfinder.unwrapper.XC[barfinder.Centroid[0][k],barfinder.Centroid[1][k]], barfinder.unwrapper.YC[barfinder.Centroid[0][k],barfinder.Centroid[1][k]], barfinder.Area[k]
-        #    X.append(x), Y.append(y), A.append(a)
-        #    #print x, y, a        
-        #from matplotlib import pyplot as plt
-        #plt.figure()
-        #plt.imshow(np.dstack((MIR,NIR,R)), extent=GeoReference(GeoTransf).extent)
-        #plt.plot( barfinder.unwrapper.XC[:,0], barfinder.unwrapper.YC[:,0], 'w' )
-        #plt.plot( barfinder.unwrapper.XC[:,-1], barfinder.unwrapper.YC[:,-1], 'w' )
-        #plt.plot( X, Y, 'ro' )
-        #plt.show()
+
+    print bars.AccumulateBends()
+    sys.exit()
     bars.CentroidsEvol( 0 )
     if free: bars.AverageBarMigRate()
 

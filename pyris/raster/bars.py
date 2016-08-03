@@ -543,8 +543,25 @@ class TemporalBars( object ):
                 plt.show()
 
 
-
 class FreeTemporalBars( TemporalBars ):
+
+    def AccumulateBends( self ):
+        
+        '''For each bend we follow its history through indices'''
+
+        BendIdx = self.Bars[0].unwrapper.Bend.astype(int)
+        Bends = np.unique(BendIdx[BendIdx>=0]).astype(int)
+        NextBend = self.Bars[0].unwrapper.NextBend.astype(int)
+        self.BendAccumulator = -np.ones( (Bends.size,len(self.T)), dtype=int )
+        for iBend, Bend in enumerate( Bends ):
+            self.BendAccumulator[iBend,0] = Bend
+            b = NextBend[ BendIdx==Bend ][0]
+            for iFinder, Finder in enumerate( self.Bars[1:], 1 ):
+                if b == -1: break
+                self.BendAccumulator[iBend,iFinder] = int(b)
+                b = Finder.unwrapper.NextBend[ Finder.unwrapper.Bend==b ][0]
+        return self.BendAccumulator
+
 
     def CorrelateBars( self ):
         '''For each BarIdx(t) compute BarIdx(t+dt)'''
@@ -716,7 +733,6 @@ class FreeTemporalBars( TemporalBars ):
                     plt.arrow( s0, n0, ds, dn, facecolor='k', edgecolor='k' )
                 plt.axis('tight')
                 plt.show()
-
 
         self.BarMigRate.append( NaNs( Finder.unwrapper.s.size ) )
         Z = np.nanmean( np.dstack(Zs), axis=2 )
