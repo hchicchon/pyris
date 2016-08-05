@@ -130,7 +130,6 @@ class BarFinder( object ):
             index='BAR', method='global' ) ## This must be made locally, otherwise we dont see bars eventually
 
 
-
         #plt.figure()
         #plt.imshow( np.dstack((bands['MIR'],bands['NIR'],bands['R'])) )
         #plt.figure()
@@ -157,17 +156,17 @@ class BarFinder( object ):
         # Identify the Largest Bar on the Bend
         labeled_array, num_features = ndimage.measurements.label( Bars )
         self.Bars = labeled_array
-        self.BarIdx = np.arange( num_features, dtype=int )
+        self.BarIdx = np.arange( num_features, dtype=int )+1
         return self.Bars
 
 
     def BarCentroid( self ):
         '''Compute Centroid of Each Bar'''
 
-        num_features = self.BarIdx.max() + 1 # Number of Bar Features
+        num_features = self.BarIdx.max() # Number of Bar Features
         IC, JC = np.zeros(num_features,dtype=int), np.zeros(num_features,dtype=int) # Indexes of Bar Centroids
         # Compute Bar Centroids
-        for n in xrange( num_features-1 ): [ IC[n], JC[n] ] = ndimage.measurements.center_of_mass( self.Bars==(n+1) )
+        for n in xrange( 1,num_features ): [ IC[n-1], JC[n-1] ] = ndimage.measurements.center_of_mass( self.Bars==(n) )
         self.Centroid = np.vstack((IC, JC))
         return IC, JC
 
@@ -175,7 +174,7 @@ class BarFinder( object ):
     def BarArea( self ):
         ''''Measure the number of Pixels of each Bar'''
         self.Area = np.zeros( self.BarIdx.size, dtype=int )
-        for n in self.BarIdx: self.Area[n] = np.sum( self.Bars==n )
+        for n in self.BarIdx: self.Area[n-1] = np.sum( self.Bars==n )
         return self.Area
 
 
@@ -246,7 +245,7 @@ class BarFinder( object ):
         '''Compute the contour line of each emerging bar'''
         self.Contours = []
         for n in self.BarIdx:
-            contour = sm.find_contours( self.Bars==n+1, 0.5 )
+            contour = sm.find_contours( self.Bars==n, 0.5 )
             I, J = contour[0][:,0], contour[0][:,1]
 
             if np.abs(I[-1]-I[0])>1:
@@ -561,11 +560,14 @@ class FreeTemporalBars( TemporalBars ):
                 self.BendAccumulator[iBend,iFinder] = int(b)
                 b = Finder.unwrapper.NextBend[ Finder.unwrapper.Bend==b ][0]
         return self.BendAccumulator
-
+        
 
     def CorrelateBars( self ):
         '''For each BarIdx(t) compute BarIdx(t+dt)'''
 
+        accumulator = self.AccumulateBends()
+        self.BarAccumulator = -np.ones( (self.Bars[0].BarIdx.size,len(self.T)), dtype=int )
+        self.BarAccumulator[:,0] = self.Bars[0].BarIdx
         self.BarsCorr = []
         
         for iBars, (BarsL, BarsR, TL, TR) in enumerate( zip( self.Bars[:-1], self.Bars[1:], self.T[:-1], self.T[1:] ) ):
@@ -575,7 +577,7 @@ class FreeTemporalBars( TemporalBars ):
 
             for iBarL, BarL in enumerate( BarsL.BarIdx ):
 
-                # Bar Centroid(t)
+                # Bar Centroid (t)
                 IL, JL = BarsL.Centroid[0,iBarL], BarsL.Centroid[1,iBarL]
                 XcL, YcL = BarsL.unwrapper.XC[IL,JL], BarsL.unwrapper.YC[IL,JL]
                 NL = BarsL.unwrapper.N[JL] # Transverse Coordinate
@@ -584,17 +586,25 @@ class FreeTemporalBars( TemporalBars ):
                 SL_0 = BarsL.unwrapper.s[ BarsL.unwrapper.Bend==BendL ][0] # Coordinate of Upstream Inflection Point
                 RL = SL - SL_0 # Relative Longitudinal Coordinate
 
-                # Bar Centroid(t+dt)
+                # Bar Centroid (t+dt)
                 xR, yR = BarsR.unwrapper.XC[BarsR.Centroid[0,:], BarsR.Centroid[1,:]], BarsR.unwrapper.YC[BarsR.Centroid[0,:], BarsR.Centroid[1,:]]
                 NR = BarsR.unwrapper.N[ BarsR.Centroid[1,:] ] # Transverse Coordinate
-                SR = BarsR.unwrapper.s[ BarsR.Centroid[0,:] ] # Longitudinal COordinate
+                SR = BarsR.unwrapper.s[ BarsR.Centroid[0,:] ] # Longitudinal Coordinate
                 BendR = BarsL.unwrapper.NextBend[BarsL.unwrapper.Bend==BendL][0] # Relative to the same Bend of BarsL
                 SR_0 = BarsR.unwrapper.s[ BarsR.unwrapper.Bend==BendR ][0] # Coordinate of Upstream Inflection Point
                 RR = SR - SR_0 # Relative Longitudinal Coordinate
 
                 if any(( BendL<0, BendR<0 )):
-                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, -1, -1, -1, np.nan, np.nan, np.nan, np.nan] )
+                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, -1, -1, -1, np.nan, np.nan, np.nan, np.nan, np.nan] )
                     continue
+
+
+                # Reference System (0)
+                Bend0 = self.Bars[0].unwrapper.Bend[ self.Bars[0].unwrapper.Bend==accumulator[accumulator[:,iBars]==BendL,0] ][0]
+                S_0 = self.Bars[0].unwrapper.s[ self.Bars[0].unwrapper.Bend==Bend0 ][0]
+                L0 = self.Bars[0].unwrapper.s[self.Bars[0].unwrapper.Bend==Bend0][-1] - S_0 # Bends Length (0)
+
+                lL = BarsL.unwrapper.s[BarsL.unwrapper.Bend==BendL][-1] - BarsL.unwrapper.s[BarsL.unwrapper.Bend==BendL][0] # Bend Length (t)
 
                 mask = np.logical_or.reduce(( np.abs(NR-NL)>0.25,
                                               RR<0,
@@ -611,17 +621,20 @@ class FreeTemporalBars( TemporalBars ):
                         else:
                             BarCorr[-1][5:12] = [-1, -1, -1, np.nan, np.nan, np.nan, np.nan]
 
+                    # Position of BarL with respect to the Initial Planform
+
                     # Scale on Bend Elongation (if more than one bend is involved, we account for all of them)
                     if SR[iBarR] > BarsR.unwrapper.s[BarsR.unwrapper.Bend==BendR][-1]: ibend = 1 # The bar has moved to the next bend
                     else: ibend = 0
+                    LL0 = self.Bars[0].unwrapper.s[self.Bars[0].unwrapper.Bend==(Bend0+ibend)][-1] - self.Bars[0].unwrapper.s[self.Bars[0].unwrapper.Bend==Bend0][0] # Bends Length (0)
                     LL = BarsL.unwrapper.s[BarsL.unwrapper.Bend==(BendL+ibend)][-1] - BarsL.unwrapper.s[BarsL.unwrapper.Bend==BendL][0] # Bends Length (t)
                     LR = BarsR.unwrapper.s[BarsR.unwrapper.Bend==(BendR+ibend)][-1] - BarsR.unwrapper.s[BarsR.unwrapper.Bend==BendR][0] # Bends Length (t+dt)
                     rR = (RR[iBarR]-RL) * LL/LR / BarsL.unwrapper.b.mean()
                     nR = (NR[iBarR]-NL) * LL/LR
-                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, iBarR, IR, JR, xR[iBarR], yR[iBarR], rR, nR] )
-
+                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, iBarR, IR, JR, xR[iBarR], yR[iBarR], rR, nR, RL*L0/lL+S_0] )
+                    self.BarAccumulator[self.BarAccumulator[:,iBars]==BarL,iBars+1] = iBarR
                 except ValueError:
-                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, -1, -1, -1, np.nan, np.nan, np.nan, np.nan] )
+                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, -1, -1, -1, np.nan, np.nan, np.nan, np.nan, RL*L0/lL+S_0] )
                     continue
 
 
@@ -702,7 +715,7 @@ class FreeTemporalBars( TemporalBars ):
             Zs.append( Zgrid0 )
             self.BarMigRate.append( Zi )
 
-            if True:
+            if False: #True:
                 plt.figure()
                 plt.pcolor( Finder.unwrapper.XC, Finder.unwrapper.YC, np.ma.array(Z,mask=np.isnan(Z)) )
                 #plt.pcolor( Finder.unwrapper.XC, Finder.unwrapper.YC, Finder.unwrapper.Sc.T, cmap='YlGn' )
@@ -718,7 +731,7 @@ class FreeTemporalBars( TemporalBars ):
                 plt.axis('equal')
                 #plt.show()
 
-            if True:
+            if False: #True:
                 plt.figure(figsize=(10.24, 2.56))
                 plt.pcolor( Finder.unwrapper.Sc, Finder.unwrapper.Nc, np.ma.array(Z,mask=np.isnan(Z)).T )
                 #plt.pcolor( Finder.unwrapper.Sc, Finder.unwrapper.Nc, Finder.unwrapper.Sc )
@@ -733,6 +746,25 @@ class FreeTemporalBars( TemporalBars ):
                     plt.arrow( s0, n0, ds, dn, facecolor='k', edgecolor='k' )
                 plt.axis('tight')
                 plt.show()
+
+        if True:
+            plt.figure(figsize=(10.24, 2.56))
+            #plt.pcolor( Finder.unwrapper.Sc, Finder.unwrapper.Nc, np.ma.array(Z,mask=np.isnan(Z)).T )
+            plt.pcolor( Finder.unwrapper.Sc, Finder.unwrapper.Nc, Finder.unwrapper.Sc )
+            plt.colorbar()
+            plt.contour( Finder.unwrapper.Sc, Finder.unwrapper.Nc, Finder.Bars.T, 1, colors='r' )
+            #plt.contour( self.Bars[iFinder+1].unwrapper.Sc, self.Bars[iFinder+1].unwrapper.Nc, self.Bars[iFinder+1].Bars.T, 1, colors='r' )
+            for (BarCorr, Finder) in zip(self.BarsCorr,self.Bars[:-1]):
+                for i in xrange( len(BarCorr) ):
+                    if BarCorr[i][5]<0: continue
+                    #BarCorr.append( [iBarL, IL, JL, XcL, YcL, iBarR, IR, JR, xR[iBarR], yR[iBarR], rR, nR, RL*L0/lL+S_0] )
+                    [ s0, n0 ] = BarCorr[i][12]/Finder.unwrapper.b.mean(), Finder.unwrapper.N[BarCorr[i][2]]
+                    [ ds, dn ] = BarCorr[i][10], BarCorr[i][11]
+                    plt.plot( s0, n0, 'ko' )
+                    plt.arrow( s0, n0, ds, dn, facecolor='k', edgecolor='k' )
+            plt.axis('tight')
+            plt.show()
+
 
         self.BarMigRate.append( NaNs( Finder.unwrapper.s.size ) )
         Z = np.nanmean( np.dstack(Zs), axis=2 )

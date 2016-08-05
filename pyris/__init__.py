@@ -496,8 +496,8 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         bars.GetFinder( time, barfinder )
 
 
-    print bars.AccumulateBends()
-    sys.exit()
+    #print bars.AccumulateBends()
+    #sys.exit()
     bars.CentroidsEvol( 0 )
     if free: bars.AverageBarMigRate()
 
