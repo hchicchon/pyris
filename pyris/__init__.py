@@ -137,7 +137,7 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
         print
         print 'Processing file %s' % ( landsatname )
 
-        bands, GeoTransf = LoadLandsatData( landsat )
+        bands, GeoTransf = LoadLandsatData( landsat, L7correction=False )
 
         print 'applying BW masks...'
 
@@ -373,8 +373,8 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
 
         # Interpolation
         print 'parametric cublic spline interpolation of the centerline...'
-        step = max( 1, int( axis.B.mean() ) ) # Discard points if too close
-        Npoints = axis.L / (0.5*axis.B.mean()) # Spacing = width/4
+        step = max( 1, 0.5*int( axis.B.mean() ) ) # Discard points if too close
+        Npoints = axis.L / (0.25*axis.B.mean()) # Spacing = width/4
         PCSs = 0.25*axis.x[::step].size # Degree of smoothness = n. of data points
         
         # Pixelled PCS
@@ -417,6 +417,8 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
 
     colors = [ plt.cm.jet(x) for x in np.linspace( 0, 1, len(axisfiles) ) ]
     lws = np.linspace( 1, 5, len(axisfiles) )
+
+    return None
     plt.figure()
     #bend = 20
     for i, f1 in enumerate( axisfiles ):
@@ -464,15 +466,15 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         if not landsat_found:
             print 'Landsat data not found for %s. Skipping...' % basename
             continue
-        found_files.append( axis_file )
+            found_files.append( axis_file )
         
         #######################
-        if i_file > 1: continue
+        #if i_file > 2: continue
         #######################
 
         if free: close=True; remove_small=True
         else: close=False; remove_small=False
-        close = False; removesmall=False
+        close=True; removesmall=False # CHANGED TO CLOSE!!!
 
         print 'Processing file %s' % basename
 
@@ -481,7 +483,7 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         mig = load( mig_file )
 
          # ReLoad Landsat Data
-        [ R, G, B, NIR, MIR, SWIR ], GeoTransf = LoadLandsatData( landsat_dir )
+        [ R, G, B, NIR, MIR, SWIR ], GeoTransf = LoadLandsatData( landsat_dir, L7correction=False )
         bands = { 'R' : R, 'G' : G, 'B' : B, 'NIR' : NIR, 'MIR' : MIR, 'SWIR' : SWIR }
 
         # Compute Transformed Coordinates and Interpolate Band
@@ -495,19 +497,11 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         #barfinder.Show( bands )
         bars.GetFinder( time, barfinder )
 
+    S, N, X, Y, Z, Si, Ni, DSi, DNi, Yi, Wi = bars.CentroidsEvol( 0 )
 
-    #print bars.AccumulateBends()
-    #sys.exit()
-    bars.CentroidsEvol( 0 )
-    if free: bars.AverageBarMigRate()
-
-    # Dump Results
-    #for ibend in bars.IterBends():
-    #    _, SN, _ = bars.CentroidsEvol( ibend )
-    #    
-    #    [s, n] = np.asarray( SN ).T
-    #    name = os.path.join( bardir, '.'.join(( 'bend_%04d' % ibend, 'npy' )) )
-    #    save( name, np.vstack((s, n)) )
+    np.save( os.path.join(bardir, 'interpolation.npy'), (S,N,X,Y,Z) )
+    np.save( os.path.join(bardir, 'bendsep.npy'), (bars.Bars[0].unwrapper.Bend, bars.Bars[0].unwrapper.b) )
+    np.save( os.path.join(bardir, 'values.npy'), (Si, Ni, DSi, DNi, Yi, Wi) )
 
     if show: bars.Show( landsat_dirs, geodir )
 
