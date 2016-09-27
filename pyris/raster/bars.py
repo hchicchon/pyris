@@ -168,6 +168,11 @@ class BarFinder( object ):
         IC, JC = np.zeros(num_features,dtype=int), np.zeros(num_features,dtype=int) # Indexes of Bar Centroids
         # Compute Bar Centroids
         for n in xrange( 1,num_features ): [ IC[n-1], JC[n-1] ] = ndimage.measurements.center_of_mass( self.Bars==(n) )
+        # Apply a Correction to the Transverse Position of the Centroid: we take the position of the maximum longitudinal extension (main s axis)
+        for n in xrange( 1,num_features ):
+            s_lengths = (self.Bars==n).sum(axis=0)
+            pos = np.where( s_lengths == s_lengths.max() )[0]
+            JC[n-1] = int( ( pos.min() + pos.max() ) / 2 )
         self.Centroid = np.vstack((IC, JC))
         return IC, JC
 
