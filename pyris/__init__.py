@@ -302,6 +302,9 @@ def skeletonize_all( maskdir, skeldir, config ):
         # Pruning
         print 'pruning n=%d labelled elements...' % num_features
         pruned = np.zeros( mask.shape, dtype=int )
+        if ( skelabs>0 ).sum() == 0:
+            print 'Something missing when pruning current label. Skipping...'
+            continue
         for lab in xrange( 1, num_features+1 ):
             print 'pruning label %d...' % lab
             pruned += Pruning( labelled_skel==lab, int(config.get('Pruning', 'prune_iter')), smooth=False ) # Remove Spurs
@@ -454,8 +457,8 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         basename = os.path.splitext( os.path.split( axis_file )[-1] )[0]
         geo_file = os.path.join( geodir, '.'.join((basename,'p')) )
         mig_file = os.path.join( migdir, os.path.split( axis_file )[-1] )
-        year, day = [ int(v) for v in basename.split('_') ]
-        time = ( year + day/365 )
+        year, day = [ v for v in basename.split('_') ]
+        time = ( float(year) + float(day)/365 )
         name = '%s%s' % ( year, day )
         landsat_found = False
         for landsat_dir in landsat_dirs:
