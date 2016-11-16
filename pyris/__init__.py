@@ -137,7 +137,7 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
         print
         print 'Processing file %s' % ( landsatname )
 
-        bands, GeoTransf = LoadLandsatData( landsat, L7correction=False )
+        bands, GeoTransf = LoadLandsatData( landsat )
 
         print 'applying BW masks...'
 
@@ -486,7 +486,7 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         mig = load( mig_file )
 
          # ReLoad Landsat Data
-        [ R, G, B, NIR, MIR, SWIR ], GeoTransf = LoadLandsatData( landsat_dir, L7correction=False )
+        [ R, G, B, NIR, MIR, SWIR ], GeoTransf = LoadLandsatData( landsat_dir )
         bands = { 'R' : R, 'G' : G, 'B' : B, 'NIR' : NIR, 'MIR' : MIR, 'SWIR' : SWIR }
 
         # Compute Transformed Coordinates and Interpolate Band
