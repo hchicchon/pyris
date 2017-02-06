@@ -19,8 +19,8 @@ class Unwrapper( object ):
 
     Input
     -----
-    data        SARA.py-like output for a single river planform
-    GeoTransf   SARA.py-like Geospatial Coordinate Transform
+    data        Output for a single river planform
+    GeoTransf   Geospatial Coordinate Transform
     '''
 
     def __init__( self, data, mig, GeoTransf ):
@@ -57,7 +57,6 @@ class Unwrapper( object ):
         self.N = N
         # Knots
         self.Xc, self.Yc = np.zeros((S.size, N.size)), np.zeros((S.size, N.size))
-        dS = np.gradient( S )
         angle = np.arctan2( np.gradient( Y ),  np.gradient( X ) )
 
         # Create Cartesian Coorinates Array for Intrinsic Coordinate Grid
@@ -121,55 +120,59 @@ class BarFinder( object ):
         Wbands = { } # Water bands
         Vbands = { } # Vegetation bands
 
-        for nband in [ 'R', 'G', 'B', 'NIR', 'MIR' ]:
+        for nband in [ 'R', 'G', 'B', 'NIR', 'MIR', 'SWIR' ]:
             Wbands[nband] = ndimage.interpolation.map_coordinates(
                 bands[nband][::-1,:], [self.unwrapper.Yc, self.unwrapper.Xc] )
 
-        # Segmentation - Define Water
-        Idx, isWater, otsu_glob = SegmentationIndex(
+        Idx, Bars, otsu_glob = SegmentationIndex(
             R=Wbands['R'], G=Wbands['G'], B=Wbands['B'],
-            NIR=Wbands['NIR'], MIR=Wbands['MIR'],
-            index='MNDWI', method='global' )
-    
-        # Segmentation - Define Vegetation
-        for nband in [ 'R', 'G', 'B', 'NIR', 'MIR' ]:
-            Vbands[nband] = np.where( ~isWater, Wbands[nband], np.nan )
+            NIR=Wbands['NIR'], MIR=Wbands['MIR'], SWIR=Wbands['SWIR'],
+            index='BAR', method='global' ) ## This must be made locally, otherwise we dont see bars eventually
 
-        Idx, isNotVeg, otsu_glob = SegmentationIndex(
-            R=Vbands['R'], G=Vbands['G'], B=Vbands['B'],
-            NIR=Vbands['NIR'], MIR=Vbands['MIR'],
-            index='NDVI', method='local' ) ## This must be made locally, otherwise we dont see bars eventually
-
-        # Channel - ( Water + Vegetation ) = Bars
-        Bars = np.where( np.bitwise_and(~isWater, isNotVeg), 1, 0 ).astype(np.uint8)
+        #plt.figure()
+        #plt.imshow( np.dstack((bands['MIR'],bands['NIR'],bands['R'])) )
+        #plt.figure()
+        #plt.pcolormesh( self.unwrapper.XC, self.unwrapper.YC, Idx, cmap='Spectral' )
+        #plt.axis('equal')
+        #plt.figure()
+        #plt.pcolormesh( self.unwrapper.XC, self.unwrapper.YC, Bars, cmap='Spectral' )
+        #plt.axis('equal')
+        #plt.show()
         
         # Apply a Convex Hull to Channel Bars
-        Bars = mm.convex_hull_object( Bars )
+        #Bars = mm.convex_hull_object( Bars )
+
         if close:
             # 1/8 of the total average channel width is used ( 1/4*mean(b) )
-            rad = max( 0, 0.25*self.unwrapper.b.mean()/self.unwrapper.GeoTransf['PixelSize'] )
+            rad = max( 0, self.unwrapper.b.mean()/self.unwrapper.GeoTransf['PixelSize'] )
             Bars = mm.binary_closing( Bars, mm.disk(rad) )
 
-        # FIXME : How do we define the threshold dimension for channel bars in the regridded unwrapped shit?
         if remove_small:
-            Amin = self.unwrapper.N.size/2 * ( self.unwrapper.b.mean() / np.ediff1d(self.unwrapper.s[:2])[0] )
-            Bars = mm.remove_small_objects( Bars, 2*Amin ) # Remove small Bars
-            Bars = mm.remove_small_holes( Bars, Amin ) # Remove Internal Spots
+            Amin = 0.1*self.unwrapper.N.size/2 * ( self.unwrapper.b.mean() /  (self.unwrapper.s[1]-self.unwrapper.s[0]) )
+            mm.remove_small_objects( Bars, 2*Amin, in_place=True ) # Remove small Bars
+            mm.remove_small_holes(   Bars,   Amin, in_place=True ) # Remove Internal Spots
+
+        # Apply a Convex Hull to Channel Bars
+        Bars = mm.convex_hull_object( Bars )
 
         # Identify the Largest Bar on the Bend
         labeled_array, num_features = ndimage.measurements.label( Bars )
         self.Bars = labeled_array
-        self.BarIdx = np.arange( num_features, dtype=int )
+        self.BarIdx = np.arange( num_features, dtype=int )+1
         return self.Bars
-
 
     def BarCentroid( self ):
         '''Compute Centroid of Each Bar'''
 
-        num_features = self.BarIdx.max() + 1 # Number of Bar Features
+        num_features = self.BarIdx.max() # Number of Bar Features
         IC, JC = np.zeros(num_features,dtype=int), np.zeros(num_features,dtype=int) # Indexes of Bar Centroids
         # Compute Bar Centroids
-        for n in xrange( num_features-1 ): [ IC[n], JC[n] ] = ndimage.measurements.center_of_mass( self.Bars==(n+1) )
+        for n in xrange( 1,num_features ): [ IC[n-1], JC[n-1] ] = ndimage.measurements.center_of_mass( self.Bars==(n) )
+        # Apply a Correction to the Transverse Position of the Centroid: we take the position of the maximum longitudinal extension (main s axis)
+        for n in xrange( 1,num_features ):
+            s_lengths = (self.Bars==n).sum(axis=0)
+            pos = np.where( s_lengths == s_lengths.max() )[0]
+            JC[n-1] = int( ( pos.min() + pos.max() ) / 2 )
         self.Centroid = np.vstack((IC, JC))
         return IC, JC
 
@@ -177,9 +180,8 @@ class BarFinder( object ):
     def BarArea( self ):
         ''''Measure the number of Pixels of each Bar'''
         self.Area = np.zeros( self.BarIdx.size, dtype=int )
-        for n in self.BarIdx: self.Area[n] = np.sum( self.Bars==n )
+        for n in self.BarIdx: self.Area[n-1] = np.sum( self.Bars==n )
         return self.Area
-
 
     def BarType( self ):
         '''
@@ -205,7 +207,6 @@ class BarFinder( object ):
         self.TYPES = [ self.Central, self.Mixed, self.Lateral ]
         return TYPE
 
-
     def BarBend( self ):
         '''Return the Bar-Bend Index (to which bend the bar belongs)'''
         self.BBIdx = np.full( self.Centroid[0].size, -1, dtype=int )
@@ -217,7 +218,6 @@ class BarFinder( object ):
                     self.BBIdx[j] = i
                     break
         return self.BBIdx
-
 
     def MainBarTypeBend( self, TYPE=None ):
         '''
@@ -249,7 +249,7 @@ class BarFinder( object ):
         '''Compute the contour line of each emerging bar'''
         self.Contours = []
         for n in self.BarIdx:
-            contour = sm.find_contours( self.Bars==n+1, 0.5 )
+            contour = sm.find_contours( self.Bars==n, 0.5 )
             I, J = contour[0][:,0], contour[0][:,1]
 
             if np.abs(I[-1]-I[0])>1:
@@ -270,7 +270,6 @@ class BarFinder( object ):
         self.BarContour()
         self.MainBarBend()
         return None
-
 
 
     def Show( self, bands ):
@@ -512,7 +511,7 @@ class TemporalBars( object ):
                         break
                 if found == True:
                     from ..misc import LoadLandsatData
-                    [ R, G, B, NIR, MIR ], GeoTransf = LoadLandsatData( landsat_dir )
+                    [ R, G, B, NIR, MIR ], GeoTransf = LoadLandsatData( landsat_dir, L7correction=False )
                     bands = { 'R' : R, 'G' : G, 'B' : B, 'NIR' : NIR, 'MIR' : MIR }                    
                     ax2.imshow( np.dstack( (bands['MIR'], bands['NIR'], bands['R']) ), extent=GeoReference(GeoTransf).extent )
 
@@ -546,4 +545,291 @@ class TemporalBars( object ):
                 plt.show()
 
 
+class FreeTemporalBars( TemporalBars ):
 
+    def AccumulateBends( self ):
+        
+        '''For each bend we follow its history through indices'''
+
+        BendIdx = self.Bars[0].unwrapper.Bend.astype(int)
+        Bends = np.unique(BendIdx[BendIdx>=0]).astype(int)
+        NextBend = self.Bars[0].unwrapper.NextBend.astype(int)
+        self.BendAccumulator = -np.ones( (Bends.size,len(self.T)), dtype=int )
+        for iBend, Bend in enumerate( Bends ):
+            self.BendAccumulator[iBend,0] = Bend
+            b = NextBend[ BendIdx==Bend ][0]
+            for iFinder, Finder in enumerate( self.Bars[1:], 1 ):
+                if b == -1: break
+                self.BendAccumulator[iBend,iFinder] = int(b)
+                b = Finder.unwrapper.NextBend[ Finder.unwrapper.Bend==b ][0]
+        return self.BendAccumulator
+        
+
+    def CorrelateBars( self ):
+        '''For each BarIdx(t) compute BarIdx(t+dt)'''
+
+        accumulator = self.AccumulateBends()
+        self.BarAccumulator = -np.ones( (self.Bars[0].BarIdx.size,len(self.T)), dtype=int )
+        self.BarAccumulator[:,0] = self.Bars[0].BarIdx
+        self.BarsCorr = []
+        
+        for iBars, (BarsL, BarsR, TL, TR) in enumerate( zip( self.Bars[:-1], self.Bars[1:], self.T[:-1], self.T[1:] ) ):
+
+            BarCorr = []
+            dT = TR - TL
+
+            for iBarL, BarL in enumerate( BarsL.BarIdx ):
+
+                # Bar Centroid (t)
+                bL = BarsL.unwrapper.b.mean()
+                IL, JL = BarsL.Centroid[0,iBarL], BarsL.Centroid[1,iBarL]
+                XcL, YcL = BarsL.unwrapper.XC[IL,JL], BarsL.unwrapper.YC[IL,JL]
+                NL = BarsL.unwrapper.N[JL] # Transverse Coordinate
+                SL = BarsL.unwrapper.s[IL] # Longitudinal Coordinate
+                BendL = BarsL.BBIdx[iBarL] # Bend to which Bar(t) belongs
+                SL_0 = BarsL.unwrapper.s[ BarsL.unwrapper.Bend==BendL ][0] # Coordinate of Upstream Inflection Point
+                RL = SL - SL_0 # Relative Longitudinal Coordinate
+
+                # Bar Centroid (t+dt)
+                bR = BarsR.unwrapper.b.mean()
+                xR, yR = BarsR.unwrapper.XC[BarsR.Centroid[0,:], BarsR.Centroid[1,:]], BarsR.unwrapper.YC[BarsR.Centroid[0,:], BarsR.Centroid[1,:]]
+                NR = BarsR.unwrapper.N[ BarsR.Centroid[1,:] ] # Transverse Coordinate
+                SR = BarsR.unwrapper.s[ BarsR.Centroid[0,:] ] # Longitudinal Coordinate
+                BendR = BarsL.unwrapper.NextBend[BarsL.unwrapper.Bend==BendL][0] # Relative to the same Bend of BarsL
+                SR_0 = BarsR.unwrapper.s[ BarsR.unwrapper.Bend==BendR ][0] # Coordinate of Upstream Inflection Point
+                RR = SR - SR_0 # Relative Longitudinal Coordinate
+
+                if any(( BendL<0, BendR<0 )):
+                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, -1, -1, -1, np.nan, np.nan, np.nan, np.nan, np.nan] )
+                    continue
+
+                # Reference System (0)
+                try:
+                    b0 = self.Bars[0].unwrapper.b.mean()
+                    Bend0 = self.Bars[0].unwrapper.Bend[ self.Bars[0].unwrapper.Bend==accumulator[accumulator[:,iBars]==BendL,0] ][0]
+                    S_0 = self.Bars[0].unwrapper.s[ self.Bars[0].unwrapper.Bend==Bend0 ][0]
+                    L0 = self.Bars[0].unwrapper.s[self.Bars[0].unwrapper.Bend==Bend0][-1] - S_0 # Bends Length (0)
+                except IndexError:
+                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, -1, -1, -1, np.nan, np.nan, np.nan, np.nan, np.nan] )
+                    continue
+
+                lL = BarsL.unwrapper.s[BarsL.unwrapper.Bend==BendL][-1] - BarsL.unwrapper.s[BarsL.unwrapper.Bend==BendL][0] # Bend Length (t)
+                lR = BarsR.unwrapper.s[BarsR.unwrapper.Bend==BendR][-1] - BarsR.unwrapper.s[BarsR.unwrapper.Bend==BendR][0] # Bend Length (t+dt)
+
+                mask = np.logical_or.reduce(( np.abs(NR-NL)>0.25,
+                                              (RR-RL)>2*bL*dT,
+                                              (RR-RL)<-0.5*bL*dT,
+                                              np.sqrt( (xR-XcL)**2 + (yR-YcL)**2 )>2*bL*dT
+                                          ))
+                RR[ mask ] = np.nan
+
+                try:
+                    iBarR = np.nanargmin( np.abs(RR-RL) )
+                    BarR = BarsR.BarIdx[iBarR]
+                    IR, JR = BarsR.Centroid[0,iBarR], BarsR.Centroid[1,iBarR]
+                    if iBarL>0 and BarCorr[-1][5] == iBarR:
+                        if (RR[iBarR]-RL) >= BarCorr[-1][10]:
+                            raise ValueError
+                        else:
+                            BarCorr[-1][5:12] = [-1, -1, -1, np.nan, np.nan, np.nan, np.nan]
+
+                    # Scale on Bend Elongation (if more than one bend is involved, we account for all of them)
+                    if SR[iBarR] > BarsR.unwrapper.s[BarsR.unwrapper.Bend==BendR][-1]: ibend = 1 # The bar has moved to the next bend
+                    else: ibend = 0
+                    LL0 = self.Bars[0].unwrapper.s[self.Bars[0].unwrapper.Bend==(Bend0+ibend)][-1] - self.Bars[0].unwrapper.s[self.Bars[0].unwrapper.Bend==Bend0][0] # Bends Length (0)
+                    LL = BarsL.unwrapper.s[BarsL.unwrapper.Bend==(BendL+ibend)][-1] - BarsL.unwrapper.s[BarsL.unwrapper.Bend==BendL][0] # Bends Length (t)
+                    LR = BarsR.unwrapper.s[BarsR.unwrapper.Bend==(BendR+ibend)][-1] - BarsR.unwrapper.s[BarsR.unwrapper.Bend==BendR][0] # Bends Length (t+dt)
+                    rR = (RR[iBarR]-RL) * LL/LR / BarsL.unwrapper.b.mean()
+                    nR = (NR[iBarR]-NL) * LL/LR
+                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, iBarR, IR, JR, xR[iBarR], yR[iBarR], RR[iBarR]*L0/lR-RL*L0/lL, nR, RL*L0/lL+S_0] )
+
+                    self.BarAccumulator[self.BarAccumulator[:,iBars]==BarL,iBars+1] = iBarR
+                except ValueError:
+                    BarCorr.append( [iBarL, IL, JL, XcL, YcL, -1, -1, -1, np.nan, np.nan, np.nan, np.nan, RL*L0/lL+S_0] )
+                    continue
+
+                if False: # Centroids Correlation
+                    f = plt.figure()
+                    ax1 = f.add_subplot( 211 )
+                    ax2 = f.add_subplot( 212, sharex=ax1, sharey=ax1 )
+                    ax1.set_title('%d' % (iBarL))
+                    ax2.set_title('%d' % (iBarR))
+                    p1 = ax1.pcolormesh( BarsL.unwrapper.XC, BarsL.unwrapper.YC, BarsL.Bars, cmap='spectral' )
+                    ax1.plot( BarsL.unwrapper.XC[IL,JL], BarsL.unwrapper.YC[IL,JL], 'wo', markersize=16 )
+                    p2 = ax2.pcolormesh( BarsR.unwrapper.XC, BarsR.unwrapper.YC, BarsR.Bars, cmap='spectral' )
+                    ax2.plot( BarsR.unwrapper.XC[IR,JR], BarsR.unwrapper.YC[IR,JR], 'wo', markersize=16 )
+                    ax1.set_aspect('equal')
+                    ax2.set_aspect('equal')
+                    plt.show()
+
+            # Test Plots!!
+            if False: # Bars Arrows
+                f = plt.figure()
+                plt.pcolormesh( BarsL.unwrapper.XC, BarsL.unwrapper.YC, BarsL.Bars, cmap='Spectral', alpha=0.5 )
+                plt.contour( BarsR.unwrapper.XC, BarsR.unwrapper.YC, BarsR.Bars>0, 1, cmap='binary_r', linewidths=3 )
+                for i in xrange( len(BarCorr) ):
+                    if BarCorr[i][5]<0: continue
+                    [ x0, y0 ] = BarCorr[i][3:5]
+                    #[ x1, y1 ] = BarCorr[i][8:10]
+                    I = int(BarCorr[i][1])
+                    alpha = BarsL.unwrapper.theta[np.abs(BarsL.unwrapper.s-BarsL.unwrapper.s[I]).argmin()]
+                    ds_i, dn_i = BarCorr[i][10], BarCorr[i][11]*BarsL.unwrapper.b.mean()
+                    x1 = x0 + ds_i*np.cos(alpha) - dn_i*np.sin(alpha) #np.sqrt(ds_i**2+dn_i**2)*np.cos(alpha)
+                    y1 = y0 - ds_i*np.sin(alpha) + dn_i*np.cos(alpha) #np.sqrt(ds_i**2+dn_i**2)*np.sin(alpha)
+                    plt.plot( x0, y0, 'yo' )
+                    plt.arrow( x0, y0, x1-x0, y1-y0, facecolor='k', edgecolor='k', head_width=50, head_length=50, width=30 )
+                    plt.text( x0, y0, '%d' % int(BarCorr[i][0]), color='w' )
+                plt.axis('equal')
+                plt.show()                            
+
+            self.BarsCorr.append( BarCorr )
+        return self.BarsCorr
+
+    
+    def CentroidsEvol( self, bend_idx, normalize=True ):
+        '''Follow the evolution of the centroid of main bar of an individual meander bend'''
+
+        # We compute the Local Migration Rates and Wavenumbers of Channel Bars
+
+        self.CorrelateBars() # Create Accumulator Matrix of Bars Correlation
+
+        hwidths = NaNs( len(self.Bars)-1 ) # Reference Half-Width of the channel for each TimeFrame
+
+        # Iterate over TimeFrames
+        for iFinder, (T1, T2, Finder, BarCorr) in enumerate( zip( self.T[:-1], self.T[1:], self.Bars[:-1], self.BarsCorr ) ):
+            dT = T2 - T1
+            s, n = Finder.unwrapper.s, Finder.unwrapper.N
+            NMAX = len( BarCorr )
+            I, J = np.zeros( NMAX, dtype=int ), np.zeros( NMAX, dtype=int )
+            dsi, dni, dxi, dyi, dmi, dzi = map( NaNs, [NMAX]*6 )
+            hwidths[iFinder] = Finder.unwrapper.b.mean()
+            for i in xrange( NMAX ): # For each Bar in the Time Frame
+                I[i] = BarCorr[i][1] # Longitudinal Position of Bar Centroid
+                J[i] = BarCorr[i][2] # Transversal Position of Bar Centroid
+                dsi[i] = BarCorr[i][10] # Longitudinal Distance to which the Bar Centroid has Migrated
+                dni[i] = BarCorr[i][11] # Transversal Distance to which the Bar Centroid has Migrated
+                dzi[i] = np.sqrt( (dsi[i])**2 + (dni[i])**2 ) # Total Intrinsic Distance Migrated
+                dxi[i] = BarCorr[i][8] - BarCorr[i][3] # Cartesian x Distance of Migration
+                dyi[i] = BarCorr[i][9] - BarCorr[i][4] # Cartesian y Distance of Migration
+                dmi[i] = np.sqrt( (dxi[i])**2 + (dyi[i])**2 ) # Total Cartesian Distance Migrated
+
+            # Position of Channel Bars in Intrinsic and Cartesian Reference Systems
+            si, ni, xi, yi = s[I]/Finder.unwrapper.b.mean(), n[J], Finder.unwrapper.XC[I,J], Finder.unwrapper.YC[I,J]
+
+            if False:#True: 
+                # Plot (X,Y) Bars Correlation with Arrows for the current TimeFrame
+                plt.figure()
+                mask = np.isfinite(dsi)
+                Z = scipy_interp.griddata( (si[mask],ni[mask]), dsi[mask], (Finder.unwrapper.Sc, Finder.unwrapper.Nc), method='nearest' ).T /hwidths[iFinder]/dT
+                plt.pcolor( Finder.unwrapper.XC, Finder.unwrapper.YC, np.ma.array(Z,mask=np.isnan(Z)), cmap='viridis', alpha=0.75 )
+                plt.colorbar()
+                plt.contour( Finder.unwrapper.XC, Finder.unwrapper.YC, Finder.Bars>0, 1, colors='g', linewidths=2 )
+                plt.contour( self.Bars[iFinder+1].unwrapper.XC, self.Bars[iFinder+1].unwrapper.YC, self.Bars[iFinder+1].Bars>0, 1, colors='r', linewidths=2 )
+                for i in xrange( len(BarCorr) ):
+                    if BarCorr[i][5]<0: continue
+                    [ x0, y0 ] = BarCorr[i][3:5]
+                    #[ x1, y1 ] = BarCorr[i][8:10]
+                    alpha = Finder.unwrapper.theta[np.abs(s-s[I[i]]).argmin()]
+                    ds_i, dn_i = BarCorr[i][10], BarCorr[i][11]*hwidths[iFinder]
+                    x1 = x0 + ds_i*np.cos(alpha) - dn_i*np.sin(alpha) #np.sqrt(ds_i**2+dn_i**2)*np.cos(alpha)
+                    y1 = y0 - ds_i*np.sin(alpha) + dn_i*np.cos(alpha) #np.sqrt(ds_i**2+dn_i**2)*np.sin(alpha)
+                    #plt.plot( x0, y0, 'ko', markersize=2 )
+                    plt.arrow( x0, y0, x1-x0, y1-y0, facecolor='b', edgecolor='b', head_width=50, head_length=50, width=30 )
+                    #plt.annotate('', xytext=(x0,y0), xy=(x1,y1), arrowprops=dict(arrowstyle='simple', edgecolor='w', facecolor='w') )
+                    bidx = np.where(np.abs(np.ediff1d(Finder.unwrapper.Bend, to_begin=0)).astype(int) == 1)[0]
+                    plt.plot( [ Finder.unwrapper.XC[bidx,0], Finder.unwrapper.XC[bidx,-1] ], [ Finder.unwrapper.YC[bidx,0],Finder.unwrapper.YC[bidx,-1] ], 'g', lw=2 )
+                plt.axis('equal')
+                #plt.show()
+
+                # Plot (S,N) Bars Correlation with Arrows for the current TimeFrame
+                plt.figure(figsize=(10.24, 2.56))
+                plt.pcolor( Finder.unwrapper.Sc, Finder.unwrapper.Nc, np.ma.array(Z,mask=np.isnan(Z)).T, cmap='viridis' )
+                plt.colorbar()
+                plt.contour( Finder.unwrapper.Sc, Finder.unwrapper.Nc, Finder.Bars.T>0, 1, colors='r' )
+                for i in xrange( len(BarCorr) ):
+                    if BarCorr[i][5]<0: continue
+                    [ s0, n0 ] = si[i], ni[i]
+                    [ ds, dn ] = dsi[i]/hwidths[iFinder], dni[i]
+                    #plt.plot( s0, n0, 'ko' )
+                    plt.arrow( s0, n0, ds, dn, facecolor='b', edgecolor='b' )
+                plt.show()
+
+        Bavg = np.nanmean( hwidths ) # Time-Space Averaged Channel Width
+
+        # Locate Bars and Define Migration Vectors on the Reference River Structure for ALL the TimeFrames
+        Si, Ni, DSi, DNi, Yi, Wi, Bi = [], [], [], [], [], [], [] # Pos(S), Pos(N), Migr(S), Migr(N), Year Index, Wavenumber
+
+        for cnt, (BarCorr, Finder, T1, T2) in enumerate( zip(self.BarsCorr, self.Bars[:-1], self.T[:-1], self.T[1:]) ): # For all the TimeFrames
+            dT = (T2-T1)
+            icnt = 0
+            for i in xrange( len(BarCorr) ): # For all the Channel Bars in the Current TimeFrame
+                if BarCorr[i][5]<0: continue
+                icnt += 1
+                [ s0, n0 ] = BarCorr[i][12]/Bavg, Finder.unwrapper.N[BarCorr[i][2]] # Position (s,n)
+                [ ds, dn ] = BarCorr[i][10]/Bavg/dT, BarCorr[i][11]/dT # Migration Vector (ds,dn)
+                Si.append( s0 ), Ni.append( n0 )
+                DSi.append( ds ), DNi.append( dn )
+                Yi.append(cnt)
+                Bi.append( self.Bars[0].unwrapper.b[np.abs(self.Bars[0].unwrapper.s-s0).argmin()] )
+            # Channel Bar Wavenumbers for the Current TimeFrame
+            b0 = hwidths[ cnt ] # Channel Width for the current TimeFrame
+            wi = NaNs( icnt ) # Wavenumbers of the Current TimeFrame
+            maskl, maskr = np.asarray(Ni)[-icnt:]>0, np.asarray(Ni)[-icnt:]<0 # Left/Right-Handed Channel Bars
+            wi[maskl] = 2*np.pi / np.gradient( np.asarray(Si)[-icnt:][maskl] ) # Wavenumbers of the Left Channel Bars
+            wi[maskr] = 2*np.pi / np.gradient( np.asarray(Si)[-icnt:][maskr] ) # Wavenumbers of the Right Channel Bars
+            #wi = np.pi / np.gradient( np.asarray(Si)[-icnt:] ) # Wavenumbers of the Left Channel Bars
+            Wi += ( wi*np.asarray(Bi)[-icnt:]/Bavg ).tolist() # Correct Width - it may change significantly, therefore use local width!!!
+
+
+        Si, Ni, DSi, DNi, Yi, Wi = map( np.asarray, (Si, Ni, DSi, DNi, Yi, Wi) )
+
+        X, Y = self.Bars[0].unwrapper.XC, self.Bars[0].unwrapper.YC # Reference 
+        S, N = self.Bars[0].unwrapper.Sc*self.Bars[0].unwrapper.b.mean()/Bavg, self.Bars[0].unwrapper.Nc
+        
+        # In order to apply the criteria to an evolving meandering river, we must 'freeze its shape',
+        # i.e. we define a reference river structure according to its initial structure
+        X, Y = self.Bars[0].unwrapper.XC, self.Bars[0].unwrapper.YC # Reference 
+        S, N = self.Bars[0].unwrapper.Sc*self.Bars[0].unwrapper.b.mean()/Bavg, self.Bars[0].unwrapper.Nc
+        Z = scipy_interp.griddata( (Si, Ni), DSi, (S,N), method='linear' ).T
+
+        si, dsi, wi = [np.asarray(xx) for xx in zip(*sorted(zip(Si, DSi, Wi), key=lambda pair: pair[0]))]
+        DDS = np.gradient( si )
+
+        if False:
+            plt.figure(figsize=(16,2))
+            plt.title( 'Average annual longitudinal migration rate of channel bars (%d-%d)' % (int(self.T[0]), int(self.T[-1])) )
+            plt.pcolormesh( S, N, np.ma.array(Z,mask=np.isnan(Z)).T, cmap='jet' )
+            cs = [plt.cm.RdYlBu_r(xx) for xx in np.linspace(0,1,len(self.BarsCorr))]
+            for cnt, (BarCorr, Finder, T1, T2) in enumerate( zip(self.BarsCorr, self.Bars[:-1], self.T[:-1], self.T[1:]) ):
+                dT = (T2 - T1)
+                for i in xrange( len(BarCorr) ):
+                    if BarCorr[i][5]<0: continue
+                    #BarCorr.append( [iBarL, IL, JL, XcL, YcL, iBarR, IR, JR, xR[iBarR], yR[iBarR], rR, nR, RL*L0/lL+S_0] )
+                    [ s0, n0 ] = BarCorr[i][12]/Bavg, Finder.unwrapper.N[BarCorr[i][2]]
+                    [ ds, dn ] = BarCorr[i][10]/Bavg/dT, BarCorr[i][11]/dT
+                    plt.plot( s0, n0, 'o', color=cs[cnt] )
+                    plt.arrow( s0, n0, ds, dn, facecolor=cs[cnt], edgecolor=cs[cnt] )
+            plt.xlabel( r'$x$' )
+            plt.xlabel( r'$y$' )
+            plt.colorbar()
+            plt.show()
+        if False:
+            plt.figure()
+            plt.title( 'Average annual longitudinal migration rate of channel bars (%d-%d)' % (int(self.T[0]), int(self.T[-1])) )
+            plt.pcolormesh( X, Y, np.ma.array(Z,mask=np.isnan(Z)), cmap='jet' )
+            plt.xlabel( r'$x$' )
+            plt.xlabel( r'$y$' )
+            plt.colorbar()
+            plt.axis( 'equal' )
+            plt.show()
+
+        if False:
+            plt.figure()
+            si, ni, dsi, dni = [np.array(x) for x in zip(*sorted(zip(Si.tolist(), Ni.tolist(), DSi.tolist(), DNi.tolist()), key=lambda pair: pair[0]))]
+            for ifilter in xrange(10): dsi[1:-1] * 0.25 * (dsi[:-2] + dsi[2:] + 2*dsi[1:-1])
+            plt.plot(si, dsi, 'o')
+
+            #plt.show()
+
+
+        return S, N, X, Y, Z, Si, Ni, DSi, DNi, Yi, Wi

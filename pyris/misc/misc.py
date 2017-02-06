@@ -5,6 +5,7 @@ import matplotlib as mpl
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
 from skimage.io import imread
+from skimage.morphology import closing, disk
 import gdal
 import warnings
 
@@ -67,13 +68,13 @@ class GeoReference( object ):
     def RefCurve( self, X, Y, inverse=False ):
         X, Y = np.asarray(X), np.asarray(Y)
         if inverse:
-            Cx = ( X - self.extent[0] ) / self.GeoTransf['PixelSize']
-            Cy = -( Y - self.extent[3] ) / self.GeoTransf['PixelSize']
+            Cx = ( X - self.GeoTransf['X'] ) / self.GeoTransf['PixelSize']
+            Cy = -( Y - self.GeoTransf['Y'] ) / self.GeoTransf['PixelSize']
             return Cx, Cy
         else:
             self.Cx, self.Cy = X, Y
-            self.CX = self.extent[0] + self.Cx*self.GeoTransf['PixelSize']
-            self.CY = self.extent[3] - self.Cy*self.GeoTransf['PixelSize']
+            self.CX = self.GeoTransf['X'] + self.Cx*self.GeoTransf['PixelSize']
+            self.CY = self.GeoTransf['Y'] - self.Cy*self.GeoTransf['PixelSize']
             return self.CX, self.CY
 
 
@@ -158,15 +159,18 @@ class interactive_mask( object ):
         return self.georeference( masks )
 
 
+
+
 def LoadLandsatData( dirname ):
     '''Load Relevant Bands for the Current Landsat Data'''
-    if os.path.split(dirname)[-1].startswith('LC8'): bidx = range( 2, 8 )
+    if os.path.split(dirname)[-1].startswith( 'LC8' ): bidx = range( 2, 8 )
     else: bidx = range( 1, 6 ) + [7]
     base = os.path.join( dirname, os.path.basename(dirname) )
     ext = '.TIF'
     bnames = [ ('_B'.join(( base, '%d' % i )))+ext for i in bidx ]
     [ B, G, R, NIR, MIR, SWIR ] = [ imread( band ) for band in bnames ]
     bands = [ R, G, B, NIR, MIR, SWIR ]
+
     geo = gdal.Open( bnames[0] )
     GeoTransf = {    
         'PixelSize' : abs( geo.GetGeoTransform()[1] ),

@@ -66,6 +66,7 @@ parser.add_argument( '--output-dir', default='migration_output', help='directory
 parser.add_argument( '--filter-multiplier', default=0.33, help='multiplier of the wavelet filter' )
 # Bars Position
 parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
+parser.add_argument( '--free', action='store_true', help='use method for free bars' )
 parser.add_argument( '--show', action='store_true', help='show bars detection' )
 
 # Parse Arguments
@@ -257,4 +258,4 @@ if args.bars:
     from pyris import bars_detection
     #if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
     title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
-    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=args.show )
+    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=args.show, free=args.free )

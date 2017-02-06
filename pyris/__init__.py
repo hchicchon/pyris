@@ -49,7 +49,7 @@ __all__ = [
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
     'Thresholding', 'SegmentationIndex',
-    'Unwrapper', 'BarFinder', 'TemporalBars',
+    'Unwrapper', 'BarFinder', 'TemporalBars', 'FreeTemporalBars',
     # vector
     'AxisReader', 'ReadAxisLine',
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
@@ -129,6 +129,7 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
 
         # skip the files which have already been processes
         if all( map( os.path.isfile, [ maskfile, geofile ] ) ):
+            print
             print 'data found for file %s - skipping '  % ( landsatname )
             to_skip.append( name )
             continue
@@ -301,6 +302,9 @@ def skeletonize_all( maskdir, skeldir, config ):
         # Pruning
         print 'pruning n=%d labelled elements...' % num_features
         pruned = np.zeros( mask.shape, dtype=int )
+        if ( skelabs>0 ).sum() == 0:
+            print 'Something missing when pruning current label. Skipping...'
+            continue
         for lab in xrange( 1, num_features+1 ):
             print 'pruning label %d...' % lab
             pruned += Pruning( labelled_skel==lab, int(config.get('Pruning', 'prune_iter')), smooth=False ) # Remove Spurs
@@ -342,6 +346,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
         # input
         name = os.path.splitext( os.path.basename( skelfile ) )[0]
         maskfile = os.path.join( maskdir, '.'.join(( name, 'npy' )) )
+        geofile = os.path.join( geodir, '.'.join(( name, 'p' )) )
         # output
         axisfile = os.path.join( axisdir, '.'.join(( name, 'npy' )) )
 
@@ -353,7 +358,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
         print 'Processing file %s' % ( maskfile )
 
         # Load mask, skeleton and GeoFile
-        if use_geo: GeoTransf = pickle.load( open( geofiles[ifile] ) )
+        if use_geo: GeoTransf = pickle.load( open( geofile ) )
         mask = np.load( maskfile ).astype( int )
         skel = np.load( skelfile ).astype( int )
         num_features = mask.max()
@@ -371,9 +376,9 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
 
         # Interpolation
         print 'parametric cublic spline interpolation of the centerline...'
-        step = max( 1, int( 2*axis.B.mean() ) ) # Discard points if too close
-        Npoints = min( max( axis.L / (0.5*axis.B.mean()), 3000 ), 5000 ) # Spacing = width/4 but between (3000,5000)
-        PCSs = axis.x[::step].size # Degree of smoothness = n. of data points
+        step = max( 1, 0.5*int( axis.B.mean() ) ) # Discard points if too close
+        Npoints = axis.L / (0.25*axis.B.mean()) # Spacing = width/4
+        PCSs = 0.25*axis.x[::step].size # Degree of smoothness = n. of data points
         
         # Pixelled PCS
         xp_PCS, yp_PCS, d1xp_PCS, d1yp_PCS, d2xp_PCS, d2yp_PCS = InterpPCS( # Build Spline
@@ -383,7 +388,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
                                                     method=2, return_diff=False )
 
         Bp_PCS = WidthPCS( axis.s/axis.s[-1]*sp_PCS[-1], axis.B, sp_PCS )
-        for ifilter in xrange(10): Bp_PCS[1:-1] = 0.25 * ( Bp_PCS[:-2] + 2*Bp_PCS[1:-1] + Bp_PCS[2:] ) # Filter channel width
+        #for ifilter in xrange(10): Bp_PCS[1:-1] = 0.25 * ( Bp_PCS[:-2] + 2*Bp_PCS[1:-1] + Bp_PCS[2:] ) # Filter channel width
        
         # GeoReferenced PCS
         if use_geo:
@@ -415,6 +420,8 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
 
     colors = [ plt.cm.jet(x) for x in np.linspace( 0, 1, len(axisfiles) ) ]
     lws = np.linspace( 1, 5, len(axisfiles) )
+
+    return None
     plt.figure()
     #bend = 20
     for i, f1 in enumerate( axisfiles ):
@@ -439,18 +446,19 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
     plt.show()
 
 
-def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
+def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, free=False ):
     
     axis_files = [ os.path.join( axisdir, f ) for f in sorted( os.listdir( axisdir ) ) ]
     found_files = []
-    bars = TemporalBars()
+    if not free: bars = TemporalBars()
+    else: bars = FreeTemporalBars()
     
     for i_file, axis_file in enumerate( axis_files ):
         basename = os.path.splitext( os.path.split( axis_file )[-1] )[0]
         geo_file = os.path.join( geodir, '.'.join((basename,'p')) )
         mig_file = os.path.join( migdir, os.path.split( axis_file )[-1] )
-        year, day = [ int(v) for v in basename.split('_') ]
-        time = ( year + day/365 )
+        year, day = [ v for v in basename.split('_') ]
+        time = ( float(year) + float(day)/365 )
         name = '%s%s' % ( year, day )
         landsat_found = False
         for landsat_dir in landsat_dirs:
@@ -461,9 +469,15 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
         if not landsat_found:
             print 'Landsat data not found for %s. Skipping...' % basename
             continue
-        found_files.append( axis_file )
+            found_files.append( axis_file )
+        
+        #######################
+        #if i_file > 0: continue
+        #######################
 
-        if i_file > 0: continue
+        if free: close=True; remove_small=True
+        else: close=False; remove_small=False
+        close=True; removesmall=False # CHANGED TO CLOSE!!!
 
         print 'Processing file %s' % basename
 
@@ -477,20 +491,20 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
 
         # Compute Transformed Coordinates and Interpolate Band
         unwrapper = Unwrapper( axis, mig, GeoTransf )
-        unwrapper.unwrap( R.shape )
+        unwrapper.unwrap( R.shape, Npts=100 )
     
-        # Find and Clafssify Bars
+        # Find and Classify Bars
         barfinder = BarFinder( unwrapper )
-        barfinder( bands, close=False, remove_small=False )
+        
+        barfinder( bands, close=close, remove_small=remove_small )
+        #barfinder.Show( bands )
         bars.GetFinder( time, barfinder )
 
-    # Dump Results
-    for ibend in bars.IterBends():
-        _, SN, _ = bars.CentroidsEvol( ibend )
-        
-        [s, n] = np.asarray( SN ).T
-        name = os.path.join( bardir, '.'.join(( 'bend_%04d' % ibend, 'npy' )) )
-        save( name, np.vstack((s, n)) )
+    S, N, X, Y, Z, Si, Ni, DSi, DNi, Yi, Wi = bars.CentroidsEvol( 0 )
+
+    np.save( os.path.join(bardir, 'interpolation.npy'), (S,N,X,Y,Z) )
+    np.save( os.path.join(bardir, 'bendsep.npy'), (bars.Bars[0].unwrapper.Bend, bars.Bars[0].unwrapper.b) )
+    np.save( os.path.join(bardir, 'values.npy'), (Si, Ni, DSi, DNi, Yi, Wi) )
 
     if show: bars.Show( landsat_dirs, geodir )
 
