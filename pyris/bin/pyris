@@ -15,7 +15,7 @@ try:
 except ImportError:
     import configparser as ConfigParser
 
-sys.path.append( os.curdir ) # XXX: Only in development version (i.e. if pyris is not installed)!!!!
+#sys.path.append( os.curdir ) # XXX: Only in development version (i.e. if pyris is not installed)!!!!
 
 class StoreDictSet( argparse.Action ):
     '''Read a Settings Dictionary from the command line and store it in the arguments' namespace'''

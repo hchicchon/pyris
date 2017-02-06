@@ -30,14 +30,14 @@ setup(
     name = 'pyris',
     version = '1.0',
     author = 'Federico Monegaglia',
-    author email = 'f.monegaglia@gmail.com',
+    author_email = 'f.monegaglia@gmail.com',
     maintainer = 'Federico Monegaglia',
-    maintainer email = 'f.monegaglia@gmail.com',
+    maintainer_email = 'f.monegaglia@gmail.com',
     description = description,
     long_description = long_description,
-    url = 'https://bitbucket.org/fmonegaglia/pyris'
+    url = 'https://bitbucket.org/fmonegaglia/pyris',
     py_modules = [ 'misc', 'raster', 'vector' ],
-    scripts = ['bin/pyris'],
+    scripts = ['pyris/bin/pyris'],
     
 )
     
