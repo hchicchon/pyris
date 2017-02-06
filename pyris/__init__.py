@@ -30,8 +30,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 __author__ = 'Federico Monegaglia'
-__email__ = 'f.monegaglia@gmaial.com'
-__version__ = '0.1'
+__email__ = 'f.monegaglia@gmail.com'
+__version__ = '1.0'
 __year__ = '2016'
 
 __all__ = [
