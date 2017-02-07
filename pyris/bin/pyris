@@ -178,7 +178,7 @@ if args.segmentation:
     from pyris import segment_all
     title = 'Running image segmentation over the external directory: %s' % cf.get( 'Data', 'input' )
     print; print title; print '-'*len(title)
-    segment_all( landsat_dirs, geodir, cf, maskdir, auto_label=args.label, collection=args.collection )
+    segment_all( landsat_dirs, geodir, cf, maskdir, auto_label=args.label )
 
 # Manually Clean Masks
 # --------------------
@@ -187,13 +187,13 @@ if args.clean_mask is not None:
     if len( args.clean_mask ) == 0:
         title = 'Manual cleaning of channel masks'
         print; print title; print '-'*len(title)
-        if args.config is not None: clean_masks( maskdir, geodir=geodir, config=cf, file_only=False, collection=args.collection )
+        if args.config is not None: clean_masks( maskdir, geodir=geodir, config=cf, file_only=False )
         else: clean_masks( maskdir )
     else:
         for f in args.clean_mask:
             title = 'Manual cleaning of mask files'
             print; print title; print '-'*len(title)
-            if args.config is not None: clean_masks( f, geodir=geodir, config=cf, file_only=True, collection=args.collection )
+            if args.config is not None: clean_masks( f, geodir=geodir, config=cf, file_only=True )
             else: clean_masks( maskdir )
 
 # Skeletonization
@@ -258,4 +258,4 @@ if args.bars:
     from pyris import bars_detection
     #if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
     title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
-    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=args.show, free=args.free, collection=args.collection )
+    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=args.show, free=args.free )
