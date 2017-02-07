@@ -85,7 +85,7 @@ class interactive_mask( object ):
         self.name =  self.path.split( os.sep )[-1]
 
     def build_real_color( self ):
-        if self.name.startswith( 'LC8' ):
+        if any( [self.name.startswith( s ) for s in ['LC8', 'LC08']] ):
             warnings.warn( 'Landsat 8 may return distorted images as real color.', Warning )
             b1, b2, b3 = 'B6', 'B5', 'B4'
         else:
@@ -163,7 +163,7 @@ class interactive_mask( object ):
 
 def LoadLandsatData( dirname ):
     '''Load Relevant Bands for the Current Landsat Data'''
-    if os.path.split(dirname)[-1].startswith( 'LC8' ): bidx = range( 2, 8 )
+    if any( [os.path.split(dirname)[-1].startswith( s ) for s in ['LC8', 'LC08']] ): bidx = range( 2, 8 )
     else: bidx = range( 1, 6 ) + [7]
     base = os.path.join( dirname, os.path.basename(dirname) )
     ext = '.TIF'

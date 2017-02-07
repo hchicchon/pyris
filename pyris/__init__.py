@@ -25,6 +25,7 @@ from skimage.io import imread
 from scipy import ndimage
 from skimage.measure import regionprops
 import warnings
+import datetime
 
 # Suppress Warnings
 warnings.filterwarnings("ignore")
@@ -101,6 +102,26 @@ def save( fname, *args, **kwargs ):
         e = 'Format %s not supported for file %s. Use either "npy" or "txt"' % ( ext, fname )
         raise TypeError, e
 
+def get_year_jday( landsatname ):
+    collection = len(landsatname.split('_'))==7
+    if collection: # Landsat Collection
+        # Must Convert into Julian Calendar
+        lname_arr = landsatname.split( '_' )
+        year = lname_arr[3][:4]
+        month = lname_arr[3][4:6]
+        day = lname_arr[3][6:8]
+        date_fmt = '%Y.%m.%d'
+        date_s = '%s.%s.%s' % ( year, month, day )
+        date = datetime.datetime.strptime( date_s, date_fmt )
+        jday = '%03d' % date.timetuple().tm_yday
+    else: # PreCollection
+        # Already in Julian Calendar
+        year = landsatname[9:13]
+        jday = landsatname[13:16]
+    # Return As Strings
+    return year, jday
+
+    
 # =====================
 # Main Script Functions
 # =====================
@@ -115,13 +136,12 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
     '''
     to_skip = []
     # Iterate over Landsat Directories
-    yearday = [int(os.path.split(landsat)[-1][9:16]) for landsat in landsat_dirs]
+    yearday = [ ''.join( get_year_jday(os.path.split(landsat_dir)[-1]) ) for landsat_dir in landsat_dirs ]
     yd, ldirs = [list(x) for x in zip(*sorted(zip(yearday, landsat_dirs), key=lambda pair: pair[0]))] # Sort by time
     for landsat in ldirs:
         # input
         landsatname = os.path.basename( landsat )
-        year = landsatname[9:13]
-        jday = landsatname[13:16]
+        year, jday = get_year_jday( landsatname )
         name = '_'.join( ( year, jday ) )
         # output
         maskfile = os.path.join( maskdir, '.'.join( (name, 'npy') ) )
@@ -241,11 +261,12 @@ def clean_masks( maskdir, geodir=None, config=None, file_only=False ):
         # Look for the corresponding landsat image
         bg = None
         if config is not None:
-            year, day = os.path.splitext( os.path.basename(maskfile) )[0].split('_')
+            yearday = os.path.splitext( os.path.basename(maskfile) )[0]
             ldir = config.get('Data', 'input')
             landsats = [os.path.join(ldir,d) for d in os.listdir(ldir)]
             for l in landsats:
-                if year+day in os.path.basename(l):
+                lyearday = '_'.join( os.path.basename(l) )
+                if yearday==lyearday:
                     bg = imread(os.path.join( l, os.path.basename(l).strip()+'_B1.TIF' ))
                     break
         GeoTransf = pickle.load( open(geofile) ) if geofile is not None else None
@@ -376,7 +397,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
 
         # Interpolation
         print 'parametric cublic spline interpolation of the centerline...'
-        step = max( 1, 0.5*int( axis.B.mean() ) ) # Discard points if too close
+        step = int( max( 1, 0.5*int( axis.B.mean() ) ) ) # Discard points if too close
         Npoints = axis.L / (0.25*axis.B.mean()) # Spacing = width/4
         PCSs = 0.25*axis.x[::step].size # Degree of smoothness = n. of data points
         
@@ -457,12 +478,12 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         basename = os.path.splitext( os.path.split( axis_file )[-1] )[0]
         geo_file = os.path.join( geodir, '.'.join((basename,'p')) )
         mig_file = os.path.join( migdir, os.path.split( axis_file )[-1] )
-        year, day = [ v for v in basename.split('_') ]
-        time = ( float(year) + float(day)/365 )
-        name = '%s%s' % ( year, day )
+        year, jday = [ v for v in basename.split('_') ]
+        time = ( float(year) + float(jday)/365 )
+        name = '%s%s' % ( year, jday )
         landsat_found = False
         for landsat_dir in landsat_dirs:
-            lname = os.path.splitext(os.path.split(landsat_dir)[-1])[0][9:16]
+            lname = '_'.join( get_year_jday( os.path.split(landsat_dir)[-1] ) )
             if name == lname:
                 landsat_found = True
                 break

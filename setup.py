@@ -22,6 +22,8 @@ long_description = '\n'.join((
     "Automating extraction of meandering river morphodynamics from multitemporal remotely sensed data"
     (Remote Sensing of Environment)
     --------------------------------------------------------------------------------------------------
+
+    Requires: NumPy, SciPy, MatPlotLib, GDAL
     
     '''
 ))
@@ -36,6 +38,8 @@ setup(
     description = description,
     long_description = long_description,
     url = 'https://bitbucket.org/fmonegaglia/pyris',
+    install_requires = [ 'numpy', 'matplotlib', 'scikit-image', 'gdal' ],
+    packages = [ 'pyris', 'pyris.config', 'pyris.misc', 'pyris.raster', 'pyris.vector' ],
     py_modules = [ 'misc', 'raster', 'vector' ],
     scripts = ['pyris/bin/pyris'],
     

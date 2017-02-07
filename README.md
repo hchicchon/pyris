@@ -24,3 +24,11 @@ PyRIS - Python RIvers from Satellite
 
 * Repo owner or admin
 * Other community or team contact
+
+
+### Install Instructions ###
+* Execute setup script: 'python setup.py install'
+
+### Run Instruction ###
+* Call pyris from the command line
+* 'pyris --help' provides information on the required arguments
