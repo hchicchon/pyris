@@ -1,6 +1,7 @@
 from __future__ import division
 import numpy as np
 from scipy import interpolate
+from scipy.spatial import distance as scipy_dist
 from numpy.lib import stride_tricks
 from skimage.measure import regionprops, label as skimage_label
 from ..misc import GeoReference, Line2D
@@ -32,8 +33,15 @@ class AxisReader( object ):
         self.verbose = verbose
         self.call_depth = call_depth # Level of recursion
         self.jidx = jidx # Indexes of multithread junctions
+        if self.call_depth==0:
+            self.SolveCircles()
         return None
 
+    def SolveCircles( self ):
+        
+        
+        return None
+    
     def BoundingBox( self, I, knot=None ):
         if knot is not None:
             label = skimage_label( I, connectivity=2 )
@@ -145,6 +153,7 @@ class AxisReader( object ):
                 j += j0 - 1 # Reference system    
                 I.append(i), J.append(j)
                 N += 1
+                continue
 
             elif len( pos ) > 1: # More neighboring points
                 jdist = self.NeiDist( pos[0], pos[1] )
@@ -165,72 +174,84 @@ class AxisReader( object ):
                     j += j0 - 1
                     I.append(i), J.append(j)
                     N += 1
+                    continue
 
-                else: # Multithread channel junction
-                    if self.call_depth==0:
-                        print 'channel junction at ', i0, j0, 'n branches %d - ' % len( pos ), \
-                            'starting recursion (this may require some time)...'
-                    elif self.call_depth > 0 and self.verbose:
-                        print 'channel junction at ', i0, j0, 'n branches %d - ' % len( pos ), \
-                            'level of recursion: %d' % ( self.call_depth )
+                elif len( pos ) > 2:
+                    X = [ p[0]+i0-1 for p in pos ]
+                    Y = [ p[1]+j0-1 for p in pos ]
+                    dists = scipy_dist.cdist( np.array([[i0,j0]]), np.vstack((X,Y)).T )
+                    if int( (dists>1.01).sum() ) > 1:
+                        idp = dists.argmin()
+                        i, j = X[idp], Y[idp]
+                        I.append(i), J.append(j)
+                        N += 1
+                        continue
+                
+                # Multithread channel junction
+                if self.call_depth==0:
+                    print 'channel junction at ', i0, j0, 'n branches %d - ' % len( pos ), \
+                        'starting recursion (this may require some time)...'
+                elif self.call_depth > 0 and self.verbose:
+                    print 'channel junction at ', i0, j0, 'n branches %d - ' % len( pos ), \
+                        'level of recursion: %d' % ( self.call_depth )
+                    
+                jncsl = [] # Total Lengths of the Following Branches at Junction
+                jncsw = [] # Average Width of the Following Branches at Junction
+                rdepths = []
+                self.GetJunction( N )                    
+                axijs = []
+                
+                for ij in xrange( len(pos) ):
+                    
+                    # For each of the Junctions is created a recursive instance
+                    first_point = ( pos[ij][0]+i0-1, pos[ij][1]+j0-1 ) # Initial Point of the Local Branch
+                    
+                    # Temporally remove other branches
+                    removed_indexes = [ ij-1, (ij+1)%len(pos) ]
+                    for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 0
+                    
+                    # Recursive call
+                    axr = AxisReader( self.I*self.hits, first_point=first_point, method=self.method,
+                                      call_depth=self.call_depth+1, jidx=self.jidx )
+                    axij = axr( MAXITER=MAXITER )
+                    
+                    # Set back the other branches
+                    for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 1
+                    
+                    # Check whether we are in a closed loop
+                    x0, x1, y0, y1 = axij[0][0], axij[0][-1], axij[1][0], axij[1][-1]
+                    if len(axij[0])>10 and np.sqrt( (x1-x0)**2 + (y1-y0)**2) < 3: continue
+                    
+                    axijs.append( axij ) # List of recursive AxisReader instances
+                    jncsl.append( axij[2].size ) # Total path length
+                    jncsw.append( axij[2].mean() ) # Total path average width
+                    rdepths.append(axr.call_depth ) # Total level of recursion
+                    
+                jncsl, jncsw, rdepths = map( np.asarray, (jncsl,jncsw,rdepths) )
+                
+                if len(axijs) == 0: break # I could get a Zero sometimes but that's ok (only going backward on bifos)
+                
+                if self.method == 'length':
+                    IDX = jncsl.argmax()
+                if self.method == 'width':
+                    IDX = jncsw.argmax()
+                elif self.method == 'std':
+                    # Length Control
+                    idx_to_rm = np.where( jncsl<0.75*jncsl.max() )[0]
+                    axijs = [ elem for k,elem in enumerate(axijs) if k not in idx_to_rm ]
+                    jncsl = np.delete( jncsl, idx_to_rm )
+                    jncsw = np.delete( jncsw, idx_to_rm )
+                    rdepths = np.delete( rdepths, idx_to_rm )
+                    IDX = jncsw.argmax()
+                else:
+                    raise ValueError, 'method %s not known. Must be either "std", "length" or "width"' % self.method
 
-                    jncsl = [] # Total Lengths of the Following Branches at Junction
-                    jncsw = [] # Average Width of the Following Branches at Junction
-                    rdepths = []
-                    self.GetJunction( N )                    
-                    axijs = []
-
-                    for ij in xrange( len(pos) ):
-
-                        # For each of the Junctions is created a recursive instance
-                        first_point = ( pos[ij][0]+i0-1, pos[ij][1]+j0-1 ) # Initial Point of the Local Branch
-
-                         # Temporally remove other branches
-                        removed_indexes = [ ij-1, (ij+1)%len(pos) ]
-                        for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 0
-
-                        # Recursive call
-                        axr = AxisReader( self.I*self.hits, first_point=first_point, method=self.method,
-                                          call_depth=self.call_depth+1, jidx=self.jidx )
-                        axij = axr( MAXITER=MAXITER )
-
-                        # Set back the other branches
-                        for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 1
-
-                        # Check whether we are in a closed loop
-                        x0, x1, y0, y1 = axij[0][0], axij[0][-1], axij[1][0], axij[1][-1]
-                        if len(axij[0])>10 and np.sqrt( (x1-x0)**2 + (y1-y0)**2) < 3: continue
-                        
-                        axijs.append( axij ) # List of recursive AxisReader instances
-                        jncsl.append( axij[2].size ) # Total path length
-                        jncsw.append( axij[2].mean() ) # Total path average width
-                        rdepths.append(axr.call_depth ) # Total level of recursion
-
-                    jncsl, jncsw, rdepths = map( np.asarray, (jncsl,jncsw,rdepths) )
-
-                    if len(axijs) == 0: break # I could get a Zero sometimes but that's ok (only going backward on bifos)
-
-                    if self.method == 'length':
-                        IDX = jncsl.argmax()
-                    if self.method == 'width':
-                        IDX = jncsw.argmax()
-                    elif self.method == 'std':
-                        # Length Control
-                        idx_to_rm = np.where( jncsl<0.75*jncsl.max() )[0]
-                        axijs = [ elem for k,elem in enumerate(axijs) if k not in idx_to_rm ]
-                        jncsl = np.delete( jncsl, idx_to_rm )
-                        jncsw = np.delete( jncsw, idx_to_rm )
-                        rdepths = np.delete( rdepths, idx_to_rm )
-                        IDX = jncsw.argmax()
-                    else:
-                        raise ValueError, 'method %s not known. Must be either "std", "length" or "width"' % self.method
-
-                    # Take the Widest between the remaining branches
-                    _J, _I, _ = axijs[ IDX ]
-                    self.call_depth = rdepths[ IDX ]
-                    I.extend( _I ), J.extend( _J )
-                    del axijs, axij, axr # Free some Memory
-                    break
+                # Take the Widest between the remaining branches
+                _J, _I, _ = axijs[ IDX ]
+                self.call_depth = rdepths[ IDX ]
+                I.extend( _I ), J.extend( _J )
+                del axijs, axij, axr # Free some Memory
+                break
 
         if ITER == MAXITER-1 and not self.method == 'fast':
             print 'WARNING: Maximum number of iteration reached in axis extraction!'
