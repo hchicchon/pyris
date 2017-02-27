@@ -2,7 +2,10 @@ from __future__ import division
 import numpy as np
 from scipy import interpolate
 from numpy.lib import stride_tricks
+from skimage.measure import regionprops, label as skimage_label
 from ..misc import GeoReference, Line2D
+from matplotlib import pyplot as plt
+
 
 class AxisReader( object ):
     '''
@@ -17,11 +20,13 @@ class AxisReader( object ):
                    [0,1,0],
                    [0,0,0]])
 
-    def __init__( self, I, first_point=None, start_from=None, method='width', verbose=True, call_depth=0, jidx=[] ):
+    def __init__( self, I, first_point=None, start_from=None, method='std', verbose=True, call_depth=0, jidx=[] ):
         '''Constructor'''
-        self.I = I
-        self.hits = np.where( I>0, 1, 0 ).astype( int )
-        self.first_point = first_point # Initial Point if known (used in recursion)
+        # Reduce Size by Crecting Bounding Box
+        bbox = self.BoundingBox( (I>0).astype(int), first_point )
+        self.I = I[ self.xl:self.xr, self.yl:self.yr ]
+        self.hits = (self.I>0).astype(int)        
+        self.first_point = None if first_point is None else (first_point[0]-self.xl, first_point[1]-self.yl) # Initial Point if known (used in recursion)
         self.start_from = 'b' if start_from is None else start_from # Where flow comes from
         self.method = method # Method used for multithread reaches
         self.verbose = verbose
@@ -29,6 +34,18 @@ class AxisReader( object ):
         self.jidx = jidx # Indexes of multithread junctions
         return None
 
+    def BoundingBox( self, I, knot=None ):
+        if knot is not None:
+            label = skimage_label( I, connectivity=2 )
+            I = ( label==label[ knot[0], knot[1] ] ).astype(int)
+        rp = regionprops( I )
+        [xl, yl, xr, yr] = [int(b) for b in rp[0].bbox]
+        self.xl = xl - 1
+        self.yl = yl - 1
+        self.xr = xr + 1
+        self.yr = yr + 1
+        return [ self.xl, self.xr, self.yl, self.yr ]
+    
     def GetJunction( self, idx ):
         '''List of multithread junctions indexes'''
         if len( self.jidx ) > 0: idx += self.jidx[-1]
@@ -49,7 +66,7 @@ class AxisReader( object ):
             return None
 
         strides = self.BuildStrides()
-
+        
         if self.start_from == 'b':
             for i in xrange( self.hits.shape[0]-1, 0, -1 ):
                 if np.all( self.hits[i,:] == 0 ): continue
@@ -199,14 +216,7 @@ class AxisReader( object ):
                         IDX = jncsw.argmax()
                     elif self.method == 'std':
                         # Length Control
-                        try:idx_to_rm = np.where( jncsl<0.75*jncsl.max() )[0]
-                        except:
-                            from matplotlib import pyplot as plt
-                            plt.figure()
-                            plt.imshow(self.hits, cmap='spectral', interpolation='none')
-                            plt.plot(J[-1], I[-1], 'ro')
-                            plt.show()
-                            
+                        idx_to_rm = np.where( jncsl<0.75*jncsl.max() )[0]
                         axijs = [ elem for k,elem in enumerate(axijs) if k not in idx_to_rm ]
                         jncsl = np.delete( jncsl, idx_to_rm )
                         jncsw = np.delete( jncsw, idx_to_rm )
@@ -222,12 +232,11 @@ class AxisReader( object ):
                     del axijs, axij, axr # Free some Memory
                     break
 
-
         if ITER == MAXITER-1 and not self.method == 'fast':
             print 'WARNING: Maximum number of iteration reached in axis extraction!'
         I, J = np.asarray( I ), np.asarray( J )
         B = self.I[I, J]
-        return [ J, I, B ]
+        return [ J+self.yl, I+self.xl, B ]
 
     def __call__( self, MAXITER=100000 ):
         self.GetFirstPoint()
