@@ -33,13 +33,6 @@ class AxisReader( object ):
         self.verbose = verbose
         self.call_depth = call_depth # Level of recursion
         self.jidx = jidx # Indexes of multithread junctions
-        if self.call_depth==0:
-            self.SolveCircles()
-        return None
-
-    def SolveCircles( self ):
-        
-        
         return None
     
     def BoundingBox( self, I, knot=None ):
@@ -130,7 +123,7 @@ class AxisReader( object ):
         return np.sqrt( (i1-i2)**2 + (j1-j2)**2 )
 
 
-    def Vectorize( self, MAXITER=100000 ):
+    def Vectorize( self, MAXITER=100000, inspect=False ):
 
         '''Find Indexes and Points'''
 
@@ -186,7 +179,42 @@ class AxisReader( object ):
                         I.append(i), J.append(j)
                         N += 1
                         continue
-                
+
+                if inspect: break
+                    
+                # Run in Inspection Mode Until Next Junction
+                jncsw = [] # Average Width of the Following Branches at Junction
+                axijs = []
+                endpoints = []
+                resolved = []
+                for ij in xrange( len( pos ) ):
+                    first_point = ( pos[ij][0]+i0-1, pos[ij][1]+j0-1 ) # Initial Point of the Local Branch
+                    removed_indexes = [ ij-1, (ij+1)%len(pos) ]
+                    for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 0                    
+                    axr = AxisReader( self.I*self.hits, first_point=first_point, method=self.method,
+                                      call_depth=self.call_depth+1, jidx=self.jidx )
+                    axij = axr( MAXITER=MAXITER, inspect=True )
+                    for idx in removed_indexes: self.hits[ pos[idx][0]+i0-1, pos[idx][1]+j0-1 ] = 1
+                    axijs.append( axij )
+                    jncsw.append( axij[2].mean() )
+                    endpoints.append( [axij[0][-1],axij[1][-1]] )
+                dists = scipy_dist.cdist( np.asarray(endpoints), np.asarray(endpoints) ) + np.eye(len(endpoints))*1e+05
+                if dists.min() < 1:
+                    pos, axijs, jncsw, endpoints = [ list(l) for l in zip(
+                        *sorted( zip( pos, axijs, jncsw, endpoints ), key=lambda group: group[2] ) ) ]                        
+                    #plt.figure()
+                    #plt.imshow(self.hits*self.I, cmap='spectral')
+                    #plt.colorbar()
+                    #plt.plot(J[-1], I[-1], 'ro')
+                    #for ij in xrange(len(pos)): plt.plot(endpoints[ij][0], endpoints[ij][1], 'go')
+                    #plt.title(str(dists.min()))
+                    #plt.show()
+                    for ij in xrange( len( pos ) ): self.hits[ axijs[ij][1][:-1], axijs[ij][0][:-1] ] = 0
+                    I.extend( axijs[-1][1] )
+                    J.extend( axijs[-1][0] )
+                    continue
+                    
+                    
                 # Multithread channel junction
                 if self.call_depth==0:
                     print 'channel junction at ', i0, j0, 'n branches %d - ' % len( pos ), \
@@ -199,9 +227,9 @@ class AxisReader( object ):
                 jncsw = [] # Average Width of the Following Branches at Junction
                 rdepths = []
                 self.GetJunction( N )                    
-                axijs = []
+                axijs = []                
                 
-                for ij in xrange( len(pos) ):
+                for ij in xrange( len( pos ) ):
                     
                     # For each of the Junctions is created a recursive instance
                     first_point = ( pos[ij][0]+i0-1, pos[ij][1]+j0-1 ) # Initial Point of the Local Branch
@@ -259,9 +287,9 @@ class AxisReader( object ):
         B = self.I[I, J]
         return [ J+self.yl, I+self.xl, B ]
 
-    def __call__( self, MAXITER=100000 ):
+    def __call__( self, MAXITER=100000, inspect=False ):
         self.GetFirstPoint()
-        return self.Vectorize( MAXITER=MAXITER )
+        return self.Vectorize( MAXITER=MAXITER, inspect=inspect )
 
                 
 
