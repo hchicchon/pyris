@@ -10,7 +10,6 @@ PyRIS - Python RIvers by Satellite
 ### Who do I talk to? ###
 
 * Repo owner or admin: Federico Monegaglia (f.monegaglia@gmail.com)
-* Other community or team contact
 
 ### Install Instructions ###
 
@@ -29,7 +28,15 @@ On Unix/Linux
 On Windows
 ----------
 
-**Not available yet**
+1) Install Python through Anaconda (https://www.continuum.io/downloads)
+
+2) Add Python to your Path (https://docs.python.org/2/using/windows.html)
+
+3) Install Visual Studio C++ (https://www.microsoft.com/en-us/download/details.aspx?id=44266)
+
+4) Install the GDAL library from the command prompt
+   python -m pip install gdal
+
 
 ### Run Instruction ###
 * Call pyris from the command line:
