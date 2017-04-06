@@ -492,13 +492,8 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
             continue
             found_files.append( axis_file )
         
-        #######################
-        #if i_file > 0: continue
-        #######################
-
-        if free: close=True; remove_small=True
-        else: close=False; remove_small=False
-        close=True; removesmall=False # CHANGED TO CLOSE!!!
+        close=True
+        remove_small=True
 
         print 'Processing file %s' % basename
 

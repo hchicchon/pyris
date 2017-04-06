@@ -144,13 +144,13 @@ class BarFinder( object ):
 
         if close:
             # 1/8 of the total average channel width is used ( 1/4*mean(b) )
-            rad = max( 0, self.unwrapper.b.mean()/self.unwrapper.GeoTransf['PixelSize'] )
+            rad = 1 #max( 0, self.unwrapper.b.mean()/self.unwrapper.GeoTransf['PixelSize'] )
             Bars = mm.binary_closing( Bars, mm.disk(rad) )
 
         if remove_small:
             Amin = 0.1*self.unwrapper.N.size/2 * ( self.unwrapper.b.mean() /  (self.unwrapper.s[1]-self.unwrapper.s[0]) )
-            mm.remove_small_objects( Bars, 2*Amin, in_place=True ) # Remove small Bars
-            mm.remove_small_holes(   Bars,   Amin, in_place=True ) # Remove Internal Spots
+            mm.remove_small_objects( Bars, 1, in_place=True ) # Remove small Bars
+            mm.remove_small_holes(   Bars, Amin, in_place=True ) # Remove Internal Spots
 
         # Apply a Convex Hull to Channel Bars
         Bars = mm.convex_hull_object( Bars )
@@ -420,7 +420,6 @@ class TemporalBars( object ):
         self.centroids_IJ, self.centroids_XY, self.centroids_SN = centroids_IJ, centroids_XY, centroids_SN
 
         return centroids_IJ, centroids_SN, centroids_XY
-
 
     def MainBarEvol( self, bend_idx, normalize=True ):
         '''Follow the evolution of the main bar of an individual meander bend'''
@@ -716,7 +715,7 @@ class FreeTemporalBars( TemporalBars ):
             # Position of Channel Bars in Intrinsic and Cartesian Reference Systems
             si, ni, xi, yi = s[I]/Finder.unwrapper.b.mean(), n[J], Finder.unwrapper.XC[I,J], Finder.unwrapper.YC[I,J]
 
-            if False:#True: 
+            if False: #True: 
                 # Plot (X,Y) Bars Correlation with Arrows for the current TimeFrame
                 plt.figure()
                 mask = np.isfinite(dsi)
@@ -774,12 +773,14 @@ class FreeTemporalBars( TemporalBars ):
             # Channel Bar Wavenumbers for the Current TimeFrame
             b0 = hwidths[ cnt ] # Channel Width for the current TimeFrame
             wi = NaNs( icnt ) # Wavenumbers of the Current TimeFrame
-            maskl, maskr = np.asarray(Ni)[-icnt:]>0, np.asarray(Ni)[-icnt:]<0 # Left/Right-Handed Channel Bars
-            wi[maskl] = 2*np.pi / np.gradient( np.asarray(Si)[-icnt:][maskl] ) # Wavenumbers of the Left Channel Bars
-            wi[maskr] = 2*np.pi / np.gradient( np.asarray(Si)[-icnt:][maskr] ) # Wavenumbers of the Right Channel Bars
-            #wi = np.pi / np.gradient( np.asarray(Si)[-icnt:] ) # Wavenumbers of the Left Channel Bars
-            Wi += ( wi*np.asarray(Bi)[-icnt:]/Bavg ).tolist() # Correct Width - it may change significantly, therefore use local width!!!
-
+            try:
+                maskl, maskr = np.asarray(Ni)[-icnt:]>0, np.asarray(Ni)[-icnt:]<0 # Left/Right-Handed Channel Bars
+                #wi[maskl] = 2*np.pi / np.gradient( np.asarray(Si)[-icnt:][maskl] ) # Wavenumbers of the Left Channel Bars
+                #wi[maskr] = 2*np.pi / np.gradient( np.asarray(Si)[-icnt:][maskr] ) # Wavenumbers of the Right Channel Bars
+                wi = np.pi / np.gradient( np.asarray(Si)[-icnt:] ) # Wavenumbers of the Left Channel Bars
+                Wi += ( wi*np.asarray(Bi)[-icnt:]/Bavg ).tolist() # Correct Width - it may change significantly, therefore use local width!!!
+            except ValueError:
+                Wi += NaNs( icnt ).tolist()
 
         Si, Ni, DSi, DNi, Yi, Wi = map( np.asarray, (Si, Ni, DSi, DNi, Yi, Wi) )
 
@@ -795,7 +796,7 @@ class FreeTemporalBars( TemporalBars ):
         si, dsi, wi = [np.asarray(xx) for xx in zip(*sorted(zip(Si, DSi, Wi), key=lambda pair: pair[0]))]
         DDS = np.gradient( si )
 
-        if False:
+        if False: #True: #False:
             plt.figure(figsize=(16,2))
             plt.title( 'Average annual longitudinal migration rate of channel bars (%d-%d)' % (int(self.T[0]), int(self.T[-1])) )
             plt.pcolormesh( S, N, np.ma.array(Z,mask=np.isnan(Z)).T, cmap='jet' )
@@ -813,7 +814,7 @@ class FreeTemporalBars( TemporalBars ):
             plt.xlabel( r'$y$' )
             plt.colorbar()
             plt.show()
-        if False:
+        if False: #True: #False:
             plt.figure()
             plt.title( 'Average annual longitudinal migration rate of channel bars (%d-%d)' % (int(self.T[0]), int(self.T[-1])) )
             plt.pcolormesh( X, Y, np.ma.array(Z,mask=np.isnan(Z)), cmap='jet' )
@@ -823,13 +824,13 @@ class FreeTemporalBars( TemporalBars ):
             plt.axis( 'equal' )
             plt.show()
 
-        if False:
+        if False: #True: # False:
             plt.figure()
             si, ni, dsi, dni = [np.array(x) for x in zip(*sorted(zip(Si.tolist(), Ni.tolist(), DSi.tolist(), DNi.tolist()), key=lambda pair: pair[0]))]
             for ifilter in xrange(10): dsi[1:-1] * 0.25 * (dsi[:-2] + dsi[2:] + 2*dsi[1:-1])
             plt.plot(si, dsi, 'o')
 
-            #plt.show()
+            plt.show()
 
 
         return S, N, X, Y, Z, Si, Ni, DSi, DNi, Yi, Wi
