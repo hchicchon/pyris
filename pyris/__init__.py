@@ -425,7 +425,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
         save( axisfile, ( x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS, xp_PCS, yp_PCS ) )
 
 
-def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wavelets=False, filter_multiplier=0.33 ):
+def migration_rates( axisfiles, migdir, columns=(0,1), method='curvature', use_wavelets=False, filter_multiplier=0.0, show=False ):
     
     migfiles = [ os.path.join( migdir, os.path.basename( axisfile ) ) for axisfile in axisfiles ]
     X, Y = [], []
@@ -442,29 +442,28 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='distance', use_wa
     colors = [ plt.cm.jet(x) for x in np.linspace( 0, 1, len(axisfiles) ) ]
     lws = np.linspace( 1, 5, len(axisfiles) )
 
-    return None
-    plt.figure()
-    #bend = 20
-    for i, f1 in enumerate( axisfiles ):
-        a1 = load(f1)
-        m1 = load( os.path.join(migdir, os.path.basename( f1 )) )
-        name = '/'.join( (os.path.splitext(os.path.basename(f1))[0].split('_')[::-1]) )
-        x, y, s = a1[columns[0]], a1[columns[1]], a1[2]
-        dx, dy = m1[0], m1[1]
-        b = m1[4]
-        db = np.ediff1d(b, to_begin=0)
-        idx = np.where(db>0)[0]
-        plt.plot( x, y, c=colors[i], lw=lws[i], label=name )
-        plt.plot( x[idx], y[idx], 'o', c=colors[i] )
-        for j in xrange(idx.size):
-            plt.text( x[idx[j]], y[idx[j]], str(int(b[idx[j]])) )
-        for j in xrange(0,a1.shape[1],5): plt.arrow( x[j], y[j], dx[j], dy[j], fc='k', ec='k' )
-        I = m1[6]==2
-        plt.plot( [x[I], x[I]+dx[I]], [y[I], y[I]+dy[I]], 'k', lw=4 )
-    plt.axis( 'equal' )
-    plt.legend( loc='best' )
-    plt.title( 'Migration rates' )
-    plt.show()
+    if show:
+        plt.figure()
+        #bend = 20
+        for i, f1 in enumerate( axisfiles ):
+            a1 = load(f1)
+            m1 = load( os.path.join(migdir, os.path.basename( f1 )) )
+            name = '/'.join( (os.path.splitext(os.path.basename(f1))[0].split('_')[::-1]) )
+            x, y, s = a1[columns[0]], a1[columns[1]], a1[2]
+            dx, dy = m1[0], m1[1]
+            b = m1[4]
+            db = np.ediff1d(b, to_begin=0)
+            idx = np.where(db>0)[0]
+            plt.plot( x, y, c=colors[i], lw=lws[i], label=name )
+            plt.plot( x[idx], y[idx], 'o', c=colors[i] )
+            for j in xrange(idx.size): plt.text( x[idx[j]], y[idx[j]], str(int(b[idx[j]])) )
+            for j in xrange(0,a1.shape[1],5): plt.arrow( x[j], y[j], dx[j], dy[j], fc='k', ec='k' )
+            I = m1[6]==2
+            plt.plot( [x[I], x[I]+dx[I]], [y[I], y[I]+dy[I]], 'k', lw=4 )
+        plt.axis( 'equal' )
+        plt.legend( loc='best' )
+        plt.title( 'Migration rates' )
+        plt.show()
 
 
 def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, free=False ):

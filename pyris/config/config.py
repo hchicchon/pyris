@@ -24,22 +24,22 @@ def default_config():
     cf.set( 'Data', 'channel_width', None )
 
     cf.add_section( 'Segmentation' )
-    cf.set( 'Segmentation', 'method', 'NDVI' )
+    cf.set( 'Segmentation', 'method', 'MIX' )
     cf.set( 'Segmentation', 'thresholding', 'global' )
     cf.set( 'Segmentation', 'white_masks', [] )
     cf.set( 'Segmentation', 'black_masks', [] )
 
     cf.add_section( 'Pruning' )
-    cf.set( 'Pruning', 'prune_iter', 50 )
+    cf.set( 'Pruning', 'prune_iter', 25 )
 
     cf.add_section( 'Axis' )
     cf.set( 'Axis', 'reconstruction_method', 'std' )
     cf.set( 'Axis', 'maxiter', 100000 )
 
     cf.add_section( 'Migration' )
-    cf.set( 'Migration', 'bend_method', 'distance' )
+    cf.set( 'Migration', 'bend_method', 'curvature' )
     cf.set( 'Migration', 'use_wavelets', False )
-    cf.set( 'Migration', 'bend_separation_filter_reduction', 0.5 )
+    cf.set( 'Migration', 'bend_separation_filter_reduction', 0 )
 
     return cf
 

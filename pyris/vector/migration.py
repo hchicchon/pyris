@@ -7,6 +7,24 @@ from .interpolation import InterpPCS
 if HAS_MLPY: from .. import wave
 import matplotlib.pyplot as plt
 
+if np.__version__ == '1.12.0':
+    # XXX: There's an Issue with the gradient function in NumPy 1.12.0 !
+    def gradient( y, dx=None ):
+        if dx is None:
+            return np.concatenate((
+                np.array([ (y[1]-y[0]) ]).flatten(),
+                np.array([ (y[2:]-y[:-2]) ]).flatten(),
+                np.array([ (y[-1]-y[-2]) ]).flatten(),
+            ))
+        else:
+            return np.concatenate((
+                np.array([ (y[1]-y[0]) / (dx[1]-dx[0]) ]).flatten(),
+                np.array([ (y[2:]-y[:-2]) / (dx[2:]-dx[:-2]) ]).flatten(),
+                np.array([ (y[-1]-y[-2]) / (dx[-1]-dx[-2]) ]).flatten(),
+            ))
+else:
+    gradient = np.gradient
+
 
 class AxisMigration( object ):
 
@@ -33,7 +51,7 @@ class AxisMigration( object ):
             for i in xrange( 1, theta.size ): # Set theta continuous
                 if (theta[i]-theta[i-1])/np.pi > +1.9: theta[i] -=2*np.pi
                 if (theta[i]-theta[i-1])/np.pi < -1.9: theta[i] +=2*np.pi
-            c = -np.gradient( theta, np.gradient(s) )
+            c = -gradient( theta, gradient(s) )
             self.data.append( { 'x': x, 'y': y, 's': s, 'c':c, 't':theta, 'r':rtheta } )
         return None
 
@@ -284,7 +302,7 @@ class AxisMigration( object ):
         '''Find the orthogonal point to second line on the first one'''
         [ x1, y1, s1 ] = data1['x'], data1['y'], data1['s']
         [ x2, y2, s2 ] = data2['x'], data2['y'], data2['s']
-        if L is None: L = 10*np.gradient( s1 ).mean()
+        if L is None: L = 10*gradient( s1 ).mean()
         a0 = np.arctan2( ( y2[i2+1] - y2[i2-1] ), ( x2[i2+1] - x2[i2-1] ) )
         a = a0 - np.pi/2 # Local Perpendicular Angle
         P = np.array( [ x2[i2], y2[i2] ] )
@@ -323,7 +341,7 @@ class AxisMigration( object ):
             mask2 = B2==B12[il]
             bx1, by1, bs1, N1 = x1[mask1], y1[mask1], s1[mask1], mask1.sum() # Bend in First Planform
             bx2, by2, bs2, N2 = x2[mask2], y2[mask2], s2[mask2], mask2.sum() # Bend in Second Planform
-
+            if N1<=1 or N2<=1: continue
             if N2 > N1: # Remove Random Points from Second Bend in order to interpolate
                 idx = np.full( N2, True, bool )
                 idx[ np.random.choice( np.arange(1,N2-1), N2-N1, replace=False ) ] = False
