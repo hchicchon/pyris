@@ -42,8 +42,6 @@ __all__ = [
     '__author__', '__version__', '__email__', '__year__',
     # from standard packages
     'img_as_ubyte', 'imread', 'ndimage',
-    # mlpy compatibility
-    'HAS_MLPY', 'MLPYException', 'MLPYmsg',
     # misc
     'GeoReference', 'NaNs', 'BW', 'MaskClean',
     # raster
@@ -56,17 +54,6 @@ __all__ = [
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
     'AxisMigration', 'LoadLandsatData',
     ]
-
-# Check if correct version of MLPY is installed
-try:
-    import mlpy.wavelet as wave # mlpy>=3.5 compiled from source
-    HAS_MLPY = True
-except ImportError:
-    HAS_MLPY = False
-
-class MLPYException( ImportError ):
-    pass
-MLPYmsg = '''Module MPLY not found or the version is old.'''
 
 # Import Everything from SubModules
 from raster import *

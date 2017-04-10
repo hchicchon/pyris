@@ -2,9 +2,7 @@ from __future__ import division
 import numpy as np
 from scipy import interpolate
 from ..misc import NaNs, Intersection, PolygonCentroid
-from .. import HAS_MLPY, MLPYException, MLPYmsg
 from .interpolation import InterpPCS, CurvaturePCS
-if HAS_MLPY: from .. import wave
 import matplotlib.pyplot as plt
 
 if np.__version__ == '1.12.0':
