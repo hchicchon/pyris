@@ -425,7 +425,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
         save( axisfile, ( x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS, xp_PCS, yp_PCS ) )
 
 
-def migration_rates( axisfiles, migdir, columns=(0,1), method='curvature', use_wavelets=False, filter_multiplier=0.0, show=False ):
+def migration_rates( axisfiles, migdir, columns=(0,1), show=False, pfreq=10 ):
     
     migfiles = [ os.path.join( migdir, os.path.basename( axisfile ) ) for axisfile in axisfiles ]
     X, Y = [], []
@@ -433,7 +433,7 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='curvature', use_w
         axis = load( axisfile )
         x, y = axis[ columns[0] ], axis[ columns[1] ]
         X.append( x ), Y.append( y )
-    migrations = AxisMigration( X, Y, method=method, use_wavelets=use_wavelets )( filter_reduction=filter_multiplier )
+    migrations = AxisMigration( X, Y )( pfreq=pfreq )
     for i, migfile in enumerate( migfiles ):
         [ dx, dy, dz, ICWTC, BI, B12, BUD ] = [ m[i] for m in migrations ]
         data = np.vstack( (dx, dy, dz, ICWTC, BI, B12, BUD) )
@@ -444,7 +444,6 @@ def migration_rates( axisfiles, migdir, columns=(0,1), method='curvature', use_w
 
     if show:
         plt.figure()
-        #bend = 20
         for i, f1 in enumerate( axisfiles ):
             a1 = load(f1)
             m1 = load( os.path.join(migdir, os.path.basename( f1 )) )

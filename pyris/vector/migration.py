@@ -3,7 +3,7 @@ import numpy as np
 from scipy import interpolate
 from ..misc import NaNs, Intersection, PolygonCentroid
 from .. import HAS_MLPY, MLPYException, MLPYmsg
-from .interpolation import InterpPCS
+from .interpolation import InterpPCS, CurvaturePCS
 if HAS_MLPY: from .. import wave
 import matplotlib.pyplot as plt
 
@@ -32,14 +32,12 @@ class AxisMigration( object ):
     MigRateBend - Read a List of River Planforms, Locate Individual Bends, compute Migration Rates
     '''
 
-    omega0 = 6 # Morlet Wavelet Parameter
-    icwtC = [] # Reconstructed ICWT Filtered Curvature
+    Css = []
+    method = 'curvature' # distance must be taken away
     
-    def __init__( self, Xseries, Yseries, method='distance', use_wavelets=False ):
+    def __init__( self, Xseries, Yseries ):
         '''Constructor - Get Planforms'''
         self.data = []
-        self.method = method
-        self.use_wavelets = use_wavelets
         for x, y in zip( Xseries, Yseries ):
             x, y = np.asarray(x), np.asarray(y)
             dx = np.ediff1d( x, to_begin=0 )
@@ -74,63 +72,29 @@ class AxisMigration( object ):
         '''Bend Pair Iterator'''
         for i, (i1l,i1r,i2l,i2r) in enumerate( zip( Idx1[:-1], Idx1[1:], Idx2[:-1], Idx2[1:] ) ): yield i, (i1l,i1r,i2l,i2r)
 
-    def FindPeaks( self, arr ):
-        '''Make NaN any element that is not a local maximum'''
-        arr = np.abs( arr )
-        arr[1:-1] = np.where(
-            np.logical_and(arr[1:-1]>arr[2:], arr[1:-1]>arr[:-2]), arr[1:-1], np.nan
-            )
-        arr[0], arr[-1] = np.nan, np.nan
-        return arr
-
-    def FilterAll( self, reduction=0.33 ):
+    def FilterAll( self, pfreq=10 ):
         '''Perform ICWT Filtering on all the Data'''
         for i, d in self.IterData():
-            self.icwtC.append( self.FilterCWT( d['c'], d['s'], reduction=reduction ) )
+            if i==0:
+                self.Css.append( self.FilterCs( d['c'], d['s'], d['x'], d['y'], pfreq=int(2.5*pfreq) ) )
+            else:
+                self.Css.append( self.FilterCs( d['c'], d['s'], d['x'], d['y'], pfreq=int(pfreq) ) )
         return None
 
-    def FilterCWT( self, *args, **kwargs ):
-        '''Use Inverse Wavelet Transform in order to Filter Data'''
-
-        sgnl = args[0]
-        time = args[1]
-        reduction = kwargs.pop( 'reduction', 0.33 )
-        full_output = kwargs.pop( 'full_output', False )
-
-        if self.use_wavelets:
-            if not HAS_MLPY:
-                raise ImportError,\
-                    'Package mlpy>=2.5.0 was not installed\n'\
-                    'Run with "use_wavelets" set to False'
-            N = sgnl.size
-            dt = time[1] - time[0]
-            omega0 = self.omega0
-            scales = wave.autoscales( N=N, dt=dt, dj=0.1, wf='morlet', p=omega0 )
-            cwt = wave.cwt( x=sgnl, dt=dt, scales=scales, wf='morlet', p=omega0 )
-            gws = (np.abs(cwt)**2).sum( axis=1 ) / N
-            peaks = np.full( gws.size, np.nan )
-            peaks[1:-1] = np.where( np.logical_and(gws[1:-1]>gws[2:],gws[1:-1]>gws[:-2]), gws[1:-1], np.nan )
-            for i in xrange( (~np.isnan(peaks)).astype(int).sum() ):
-                p = np.nanargmax( peaks )
-                peaks[p] = np.nan
-                scalemax = scales[ p ] # Fundamental Harmonic
-                mask = ( scales >= reduction*scalemax )
-                icwt = wave.icwt( cwt[mask, :], dt, scales[mask], wf='morlet', p=omega0 )
-                if not np.allclose(icwt, 0): break
-        else:
-            scales, scalemax = None, None
-            icwt = sgnl
-            for i in xrange( int(sgnl.size*reduction) ):
-                sgnl[1:-1] = ( sgnl[:-2] + 2*sgnl[1:-1] + sgnl[2:] ) / 4
-                sgnl[0] = ( 2*sgnl[0] + sgnl[1] ) / 3
-                sgnl[-1] = ( 2*sgnl[-1] + sgnl[-2] ) / 3
-        if full_output: return icwt, scales, scalemax
-        return icwt
+    def FilterCs( self, s, Cs, x, y, pfreq ):
+        '''Use PCS interpolation to filtetr out curvature signal'''
+        xp_PCS, yp_PCS, d1xp_PCS, d1yp_PCS, d2xp_PCS, d2yp_PCS = InterpPCS(
+            x[::pfreq], y[::pfreq], N=x.size, s=x.size+np.sqrt(2*x.size),
+            with_derivatives=True, k=2 )
+        sp_PCS, thetap_PCS, Cs_PCS = CurvaturePCS(
+            xp_PCS, yp_PCS, d1xp_PCS, d1yp_PCS, d2xp_PCS,
+            d2yp_PCS, method=2, return_diff=False )
+        return Cs_PCS
         
     def GetInflections( self, Cs ):
         '''Compute 0-crossings of channel curvature'''
-        I = np.where( Cs[1:]*Cs[:-1] < 0 )[0]
-        return I
+        IDX = np.where( Cs[1:]*Cs[:-1] < 0 )[0]
+        return IDX
 
     def DistanceInflections( self, data, prev_data, prev_I ):
         '''Compute Inflection points by moving orthogonally from previous inflection points'''
@@ -143,25 +107,16 @@ class AxisMigration( object ):
         return np.asarray( I )            
 
     def GetAllInflections( self ):
-        '''Get Inflection points on Inverse Wavelet Transform for Curvature.'''
+        '''Get Inflection points on Filtered Curvature.'''
         self.I = []
         if self.method == 'curvature':
             for i, d in self.IterData():
-                self.I.append( self.GetInflections( self.icwtC[i] ) )
+                self.I.append( self.GetInflections( self.Css[i] ) )
         elif self.method == 'distance':
             for i, d in self.IterData():
-                if i == 0: self.I.append( self.GetInflections( self.icwtC[i] ) )
+                if i == 0: self.I.append( self.GetInflections( self.Css[i] ) )
                 else:
                     self.I.append( self.DistanceInflections( d, self.data[i-1], self.I[i-1] ) )
-                    ## plt.figure()
-                    ## plt.plot(self.data[i-1]['x'], self.data[i-1]['y'], 'k')
-                    ## plt.plot(d['x'], d['y'], 'r')
-                    ## for j in xrange(self.I[-1][np.isfinite(self.I[-1])].size):
-                    ##     plt.plot( [self.data[i-1]['x'][self.I[i-1][np.isfinite(self.I[-1])][j]], self.data[i]['x'][self.I[i][np.isfinite(self.I[-1])][j]]],
-                    ##               [self.data[i-1]['y'][self.I[i-1][np.isfinite(self.I[-1])][j]], self.data[i]['y'][self.I[i][np.isfinite(self.I[-1])][j]]],
-                    ##               'go-' )
-                    ## plt.axis('equal')
-                    ## plt.show()
         return None
 
     def CorrelateInflections( self, *args, **kwargs ):
@@ -177,8 +132,7 @@ class AxisMigration( object ):
                 mask = np.isfinite( self.I[i+1] )
                 self.CI1[i+1] = self.I[i+1][ mask ].astype( int )
                 self.CI1[i] = self.I[i][ mask ].astype( int )
-                self.CI12[i] = self.CI1[i+1]
-                
+                self.CI12[i] = self.CI1[i+1]                
             self.CI12[-1] = self.CI1[-1]
             return None
 
@@ -194,7 +148,7 @@ class AxisMigration( object ):
                 for ipoint, Ipoint in enumerate( C1 ):
                     xi1, yi1, ti1 = x1[Ipoint], y1[Ipoint], R1[Ipoint]
                     xC2, yC2, tC2 = x2[C2], y2[C2], R2[C2] # Do not care about sign
-                    mask = np.logical_and( abs( (R2[C2+1])-(R1[Ipoint+1]) )>0.5*np.pi, abs( (R2[C2+1])-(R1[Ipoint+1]) )<1.5*np.pi ) # Data ti be masked with NaNs
+                    mask = np.logical_and( abs( (R2[C2+1])-(R1[Ipoint+1]) )>0.5*np.pi, abs( (R2[C2+1])-(R1[Ipoint+1]) )<1.5*np.pi ) # Data to be masked with NaNs
                     xC2 = np.where( mask, np.nan, x2[C2] )
                     yC2 = np.where( mask, np.nan, y2[C2] )
                     tC2 = np.where( mask, np.nan, R2[C2] )
@@ -203,17 +157,18 @@ class AxisMigration( object ):
                         C12[ipoint] = C2[ np.nanargmin( np.sqrt( (xC2-xi1)**2 + (yC2-yi1)**2 ) ) ]
                     except ValueError:
                         raise ValueError, 'not able to compute inflection correlation for planform n. %d. Please check your axis' % (i+2)
+                    
                 # There are some duplicated points - we need to get rid of them
                 unique, counts = np.unique(C12, return_counts=True)
                 duplic = unique[ counts>1 ]
-                cduplic = counts[ counts > 1 ]
+                cduplic = counts[ counts > 1 ]                
                 for idup, (dup, cdup) in enumerate( zip( duplic, cduplic ) ):
                     idxs = np.where( C12==dup )[0]
-                    idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) )
+                    idx = np.argmin( np.sqrt( (x2[dup]-x1[C1][idxs])**2 + (y2[dup]-y1[C1][idxs])**2 ) )                    
                     idxs = np.delete( idxs, idx )
                     C1 = np.delete( C1, idxs )
                     C12 = np.delete( C12, idxs )
-
+                    
                 while np.any(C12[:-1]>C12[1:]):
                     for j in xrange( 1, C1.size ):
                         l, r = j-1, j
@@ -223,7 +178,7 @@ class AxisMigration( object ):
                                 C1, C12 = np.delete( C1, r ), np.delete( C12, r )
                             else:
                                 C1, C12 = np.delete( C1, l ), np.delete( C12, l )
-                            break                
+                            break
 
                 self.CI1.append(C1)
                 self.CI12.append(C12)
@@ -231,11 +186,11 @@ class AxisMigration( object ):
         self.CI1.append(C12)
         return None
 
-    def BendUpstreamDownstream( self, I, icwtC ):
+    def BendUpstreamDownstream( self, I, Cs ):
         '''Bend Upstream-Downstream Indexes'''
-        BUD = NaNs( icwtC.size )
+        BUD = NaNs( Cs.size )
         for i, (il,ir) in self.Iterbends( I ):
-            iapex = il + np.abs( icwtC[ il:ir ] ).argmax()
+            iapex = il + np.abs( Cs[ il:ir ] ).argmax()
             BUD[ il ] = 2 # Inflection Point
             BUD[ ir ] = 2 # Inflection Point
             BUD[ iapex ] = 0 # Bend Apex
@@ -247,7 +202,7 @@ class AxisMigration( object ):
         '''Bend Upstream-Downstream Indexes for All Planforms'''
         self.BUD = []
         for i, d in self.IterData():
-            self.BUD.append( self.BendUpstreamDownstream( self.CI1[i], self.icwtC[i] ) )
+            self.BUD.append( self.BendUpstreamDownstream( self.CI1[i], self.Css[i] ) )
         return None
 
     def GetBends( self, c ):
@@ -344,7 +299,7 @@ class AxisMigration( object ):
             if N1<=1 or N2<=1: continue
             if N2 > N1: # Remove Random Points from Second Bend in order to interpolate
                 idx = np.full( N2, True, bool )
-                idx[ np.random.choice( np.arange(1,N2-1), N2-N1, replace=False ) ] = False
+                idx[ np.random.choice( np.arange(2,N2-2), N2-N1, replace=False ) ] = False
                 bx2 = bx2[ idx ]
                 by2 = by2[ idx ]
                 N2 = bx2.size
@@ -369,7 +324,7 @@ class AxisMigration( object ):
             dz[ mask1 ] = dzb
         return dx, dy, dz
 
-    def AllMigrationRates( self, recall_on_cutoff=True ):
+    def AllMigrationRates( self ):
         '''Apply Migration Rates Algorithm to the whole set of planforms'''
         self.dx = []
         self.dy = []
@@ -383,14 +338,14 @@ class AxisMigration( object ):
         N = ( d2['s'] ).size
         self.dx.append( NaNs( N ) ), self.dy.append( NaNs( N ) ), self.dz.append( NaNs( N ) )
         return None
-
-    def __call__( self, filter_reduction=0.33, return_on_cutoff=True ):
-        self.FilterAll( reduction=filter_reduction )
+    
+    def __call__( self, pfreq=10 ):
+        self.FilterAll( pfreq=pfreq )
         self.GetAllInflections()
         self.CorrelateInflections()
         self.LabelAllBends()
         self.AllBUDs()
         self.CorrelateBends()
         self.AllMigrationRates()
-        return self.dx, self.dy, self.dz, self.icwtC, self.BI, self.B12, self.BUD
+        return self.dx, self.dy, self.dz, self.Css, self.BI, self.B12, self.BUD
 
