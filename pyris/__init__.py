@@ -468,7 +468,7 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
         name = '%s%s' % ( year, jday )
         landsat_found = False
         for landsat_dir in landsat_dirs:
-            lname = '_'.join( get_year_jday( os.path.split(landsat_dir)[-1] ) )
+            lname = ''.join( get_year_jday( os.path.split(landsat_dir)[-1] ) )
             if name == lname:
                 landsat_found = True
                 break
@@ -477,13 +477,8 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
             continue
             found_files.append( axis_file )
         
-        #######################
-        #if i_file > 0: continue
-        #######################
-
-        if free: close=True; remove_small=True
-        else: close=False; remove_small=False
-        close=True; removesmall=False # CHANGED TO CLOSE!!!
+        close=True
+        remove_small=True
 
         print 'Processing file %s' % basename
 
