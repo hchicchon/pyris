@@ -5,7 +5,8 @@ from ..misc import NaNs, Intersection, PolygonCentroid
 from .interpolation import InterpPCS, CurvaturePCS
 import matplotlib.pyplot as plt
 
-if np.__version__ == '1.12.0':
+npv = np.__version__.split('.')
+if int(npv)[0] == 1 and int(npv)[1] >= 12:
     # XXX: There's an Issue with the gradient function in NumPy 1.12.0 !
     def gradient( y, dx=None ):
         if dx is None:
