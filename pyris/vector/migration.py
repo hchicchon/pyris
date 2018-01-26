@@ -305,7 +305,8 @@ class AxisMigration( object ):
             # ReInterpolate Second Planform (Parametric Cubic Spline)
             if N1 <= 1 or N2 <= 1: continue
             if N1 <= 3 or N2 <= 3: kpcs=1 # If we have too few points, use linear interpolation
-            else: kpcs=3
+            elif N1 <= 5 or N2 <= 5: kpcs=3 # If we have too few points, use linear interpolation
+            else: kpcs=5
             bx2, by2 = InterpPCS( bx2, by2, N=N1, s=N2, k=kpcs, with_derivatives=False )
             # Compute Migration Rates for the whole bend
             dxb = bx2 - bx1
