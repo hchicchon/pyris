@@ -6,7 +6,7 @@
 # .: Setup Script :.
 # .:==============:.
 
-# Python - RIvers by Satellites
+# Python - RIvers from Satellites
 
 from distutils.core import setup
 
@@ -18,9 +18,9 @@ long_description = '\n'.join((
     See Publication:
     
     --------------------------------------------------------------------------------------------------
-    Monegaglia et al. 2017
-    "Automating extraction of meandering river morphodynamics from multitemporal remotely sensed data"
-    (Remote Sensing of Environment)
+    Monegaglia et al.
+    "Automated extraction of meandering river morphodynamics from multitemporal remotely sensed data"
+    (under consideration for publication in "Environmental Modeling & Software")
     --------------------------------------------------------------------------------------------------
 
     Requires: NumPy, SciPy, MatPlotLib, GDAL
@@ -37,7 +37,7 @@ setup(
     maintainer_email = 'f.monegaglia@gmail.com',
     description = description,
     long_description = long_description,
-    url = 'https://bitbucket.org/fmonegaglia/pyris',
+    url = 'https://github.com/fmonegaglia/pyris',
     install_requires = [ 'numpy', 'matplotlib', 'scikit-image', 'gdal' ],
     packages = [ 'pyris', 'pyris.config', 'pyris.misc', 'pyris.raster', 'pyris.vector' ],
     py_modules = [ 'misc', 'raster', 'vector' ],
