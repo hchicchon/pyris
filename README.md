@@ -28,15 +28,12 @@ On Unix/Linux
 On Windows
 ----------
 
-1) Install Python through Anaconda (https://www.continuum.io/downloads)
+1) Install Anaconda (https://www.continuum.io/downloads)
 
 2) Add Python to your Path (https://docs.python.org/2/using/windows.html)
 
-3) Install Visual Studio C++ (https://www.microsoft.com/en-us/download/details.aspx?id=44266)
-
-4) Install the GDAL library from the command prompt
-   python -m pip install gdal
-
+3) Install GDAL through Conda Prompt
+       conda install gdal
 
 ### Run Instruction ###
 * Call pyris from the command line:
