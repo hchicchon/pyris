@@ -43,7 +43,7 @@ __all__ = [
     # from standard packages
     'img_as_ubyte', 'imread', 'ndimage',
     # misc
-    'GeoReference', 'NaNs', 'BW', 'MaskClean',
+    'GeoReference', 'NaNs', 'MaskClean',
     # raster
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
@@ -61,15 +61,8 @@ from vector import *
 from misc import *
 from config import *
 
-
-# TMP
-def show(I):
-    plt.figure()
-    plt.imshow(I, cmap='spectral', interpolation='none')
-    plt.colorbar()
-    plt.show()
-
 def load( fname, *args, **kwargs ):
+    '''Load file depending on the extension'''
     ext = os.path.splitext( fname )[-1]
     if ext == '.txt':
         return np.loadtxt( fname, *args, **kwargs )
@@ -80,6 +73,7 @@ def load( fname, *args, **kwargs ):
         raise TypeError, e
 
 def save( fname, *args, **kwargs ):
+    '''Save file depending on the extension'''
     ext = os.path.splitext( fname )[-1]
     if ext == '.txt':
         return np.savetxt( fname, *args, **kwargs )
@@ -90,6 +84,7 @@ def save( fname, *args, **kwargs ):
         raise TypeError, e
 
 def get_year_jday( landsatname ):
+    '''Get year and julian day from Landsat name'''
     collection = len(landsatname.split('_'))==7
     if collection: # Landsat Collection
         # Must Convert into Julian Calendar
@@ -109,17 +104,28 @@ def get_year_jday( landsatname ):
     return year, jday
 
     
-# =====================
-# Main Script Functions
-# =====================
+# ============================
+# Functions of the Main Script 
+# ============================
 
 def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
     '''
+    segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None )
+    =====================================================================
+
     Iterate over all the Landsat Directories and perform image segmentation
-    landsat_dirs:     directory containing all the landsat directories
-    geodir:           directory where GeoTransf instances are stored
-    maskdir:          directory where channel masks are stored
-    config:           PyRIS' RawConfigParser instance
+
+    Arguments
+    ---------
+    landsat_dirs      directory containing all the landsat directories
+    geodir            directory where GeoTransf instances are stored
+    config            PyRIS' RawConfigParser instance
+    maskdir           directory where channel masks are stored
+    auto_label        mask selection method if more than one object occur (default None)
+
+    Returns
+    -------
+    None
     '''
     to_skip = []
     # Iterate over Landsat Directories
@@ -206,7 +212,7 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
             mask *= 0
             for ilab, lab in enumerate( labs ): mask += np.where( mask_lab==int(lab), ilab+1, 0 )
         else:
-            # The larger element in the image will be used.
+            # The largest element in the image will be used.
             warnings.warn( 'automated labels may lead to erroneous planforms! please check your results!' )
             if auto_label == 'auto':
                 if config.get( 'Segmentation', 'thresholding' ) == 'local': auto_label = 'max'
@@ -232,6 +238,23 @@ def segment_all( landsat_dirs, geodir, config, maskdir, auto_label=None ):
 
 
 def clean_masks( maskdir, geodir=None, config=None, file_only=False ):
+    '''
+    clean_masks( maskdir, geodir=None, config=None, file_only=False )
+    =================================================================
+
+    Manually remove branches from masks
+
+    Arguments
+    ---------
+    maskdir           directory containing all the mask files
+    geodir            directory where GeoTransf instances are stored (default None)
+    config            PyRIS' RawConfigParser instance (default None)
+    file_only         run on a single file only (default None)
+
+    Returns
+    -------
+    None
+    '''
 
     if not file_only:
         maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
@@ -273,9 +296,26 @@ def clean_masks( maskdir, geodir=None, config=None, file_only=False ):
             np.save( maskfile, mask*bw )
         else:
             print 'skipping'
+    return None
 
 
 def skeletonize_all( maskdir, skeldir, config ):
+    '''
+    skeletonize_all( maskdir, skeldir, config )
+    ===========================================
+
+    Apply skeletonization and distance transform on all the masks
+
+    Arguments
+    ---------
+    maskdir           directory containing all the mask files
+    skeldir           directory where skeleton and distance files will be stored
+    config            PyRIS' RawConfigParser instance
+
+    Returns
+    -------
+    None
+    '''
 
     maskfiles = sorted( [ os.path.join(maskdir, f) for f in os.listdir(maskdir) ] )
 
@@ -346,6 +386,25 @@ def skeletonize_all( maskdir, skeldir, config ):
     return None
 
 def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
+    '''
+    vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True )
+    ===========================================
+
+    Extract planform centerline coordinates and metrics from each skeleton and distance map
+
+    Arguments
+    ---------
+    geodir            directory containing all the GeoTransf files
+    maskdir           directory containing all the mask files
+    skeldir           directory containing all the skeleton and distance files
+    config            PyRIS' RawConfigParser instance
+    axisdir           directory where the planform data files will be stored
+    use_geo           use georeference provided by GeoTrensf files (default True)
+
+    Returns
+    -------
+    None
+    '''
 
     skelfiles = sorted( [ os.path.join(skeldir, f) for f in os.listdir(skeldir) ] )
     if use_geo: geofiles = sorted( [ os.path.join(geodir, f) for f in os.listdir(geodir) ] )
@@ -396,7 +455,6 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
                                                     method=2, return_diff=False )
 
         Bp_PCS = WidthPCS( axis.s/axis.s[-1]*sp_PCS[-1], axis.B, sp_PCS )
-        #for ifilter in xrange(10): Bp_PCS[1:-1] = 0.25 * ( Bp_PCS[:-2] + 2*Bp_PCS[1:-1] + Bp_PCS[2:] ) # Filter channel width
        
         # GeoReferenced PCS
         if use_geo:
@@ -410,9 +468,28 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
         # Save Axis Properties
         print 'saving main channel data...'
         save( axisfile, ( x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS, xp_PCS, yp_PCS ) )
+        return None
+        
 
+def migration_rates( axisfiles, migdir, columns=(0,1), show=False, pfreq=1 ):
+    '''
+    migration_rates( axisfiles, migdir, columns=(0,1), show=False, pfreq=10 ):
+    ===========================================
 
-def migration_rates( axisfiles, migdir, columns=(0,1), show=False, pfreq=10 ):
+    Compute migration vectors and bend separation for all the planform centerlines
+
+    Arguments
+    ---------
+    axisfiles         temporally ordered list of files containing centerline data
+    migdir            directory where migration rates and bend separation data will be stored
+    columns           columns representing x and y planform coordinates in the axisfiles
+    show              show all the migrations in a window at the end of the computation (default False)
+    pfreq             smoothing coefficient (>=1) for the channel curvature for bend separation (default 1: no smoothing)
+
+    Returns
+    -------
+    None
+    '''
     
     migfiles = [ os.path.join( migdir, os.path.basename( axisfile ) ) for axisfile in axisfiles ]
     X, Y = [], []
@@ -453,6 +530,26 @@ def migration_rates( axisfiles, migdir, columns=(0,1), show=False, pfreq=10 ):
 
 
 def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, free=False ):
+    '''
+    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, free=False ):
+    ===========================================
+
+    Compute bare sediment bars morphodynamics
+
+    Arguments
+    ---------
+    landsat_dirs      temporally ordered list of directories containing the Landsat data
+    geodir            Directory containing GeoTransf files
+    axisdir           directory containing planform data files
+    migdir            directory containing migration vectors and bend separation files
+    bardir            directory where bare sediment bar morphodynamic files will be stored
+    show              show results in a window at the end of the computation (default False)
+    free              dominant sediment bars are migrating bars (defaul False)
+
+    Returns
+    -------
+    None
+    '''
     
     axis_files = [ os.path.join( axisdir, f ) for f in sorted( os.listdir( axisdir ) ) ]
     found_files = []
@@ -508,4 +605,4 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
     np.save( os.path.join(bardir, 'values.npy'), (Si, Ni, DSi, DNi, Yi, Wi) )
 
     if show: bars.Show( landsat_dirs, geodir )
-
+    return None

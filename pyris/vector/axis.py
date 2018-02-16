@@ -1,3 +1,12 @@
+# ===========================================================
+# Module: vector
+# File: axis.py
+# Package: PyRIS
+# Author: Federico Monegaglia
+# Date: April 2016
+# Description: skeleton centerline extractor and vectorizator
+# ===========================================================
+
 from __future__ import division
 import numpy as np
 from scipy import interpolate
@@ -10,8 +19,7 @@ from matplotlib import pyplot as plt
 
 class AxisReader( object ):
     '''
-    Read Pruned and Skeletonized Axis/Distance Image and
-    extract vector data.
+    A Skeleton Vectorizator
     '''
 
     primitives = ([[1,0,0],
@@ -22,7 +30,9 @@ class AxisReader( object ):
                    [0,0,0]])
 
     def __init__( self, I, first_point=None, start_from=None, method='std', verbose=True, call_depth=0, jidx=[] ):
-        '''Constructor'''
+        '''
+        Get Skeleton image data
+        '''
         # Reduce Size by Crecting Bounding Box
         bbox = self.BoundingBox( (I>0).astype(int), first_point )
         self.I = I[ self.xl:self.xr, self.yl:self.yr ]
@@ -36,6 +46,9 @@ class AxisReader( object ):
         return None
     
     def BoundingBox( self, I, knot=None ):
+        '''
+        Compute the Bounding Box of Non-Zero data
+        '''
         if knot is not None:
             label = skimage_label( I, connectivity=2 )
             I = ( label==label[ knot[0], knot[1] ] ).astype(int)
@@ -48,19 +61,25 @@ class AxisReader( object ):
         return [ self.xl, self.xr, self.yl, self.yr ]
     
     def GetJunction( self, idx ):
-        '''List of multithread junctions indexes'''
+        '''
+        List of multithread junctions indexes
+        '''
         if len( self.jidx ) > 0: idx += self.jidx[-1]
         self.jidx.append( idx )
 
     def BuildStrides( self ):
-        '''Build cache-friendly Strides Array'''
+        '''
+        Build cache-friendly Strides Array
+        '''
         n = 3
         i = 1 + self.hits.shape[0] - 3
         j = 1 + self.hits.shape[1] - 3
         return stride_tricks.as_strided( self.hits, (i,j,n,n), strides=2*self.hits.strides )
 
     def GetFirstPoint( self ):
-        '''Look for a 3x3 primitive in the image corresponding to the channel starting point'''
+        '''
+        Look for a 3x3 primitive in the image corresponding to the channel starting point
+        '''
 
         if self.first_point is not None:
             self.i0, self.j0 = self.first_point
@@ -117,7 +136,9 @@ class AxisReader( object ):
 
 
     def NeiDist( self, idx1, idx2 ):
-        '''Cartesian Distance between pixel cells'''
+        '''
+        Cartesian Distance between pixel cells
+        '''
         i1, j1 = idx1
         i2, j2 = idx2
         return np.sqrt( (i1-i2)**2 + (j1-j2)**2 )
@@ -125,7 +146,9 @@ class AxisReader( object ):
 
     def Vectorize( self, MAXITER=100000, inspect=False ):
 
-        '''Find Indexes and Points'''
+        '''
+        Find Indexes and Points
+        '''
 
         I, J = [ self.i0 ], [ self.j0 ] # Lists of channel points
         N = 0 # Counter
@@ -202,13 +225,6 @@ class AxisReader( object ):
                 if dists.min() < 1:
                     pos, axijs, jncsw, endpoints = [ list(l) for l in zip(
                         *sorted( zip( pos, axijs, jncsw, endpoints ), key=lambda group: group[2] ) ) ]                        
-                    #plt.figure()
-                    #plt.imshow(self.hits*self.I, cmap='spectral')
-                    #plt.colorbar()
-                    #plt.plot(J[-1], I[-1], 'ro')
-                    #for ij in xrange(len(pos)): plt.plot(endpoints[ij][0], endpoints[ij][1], 'go')
-                    #plt.title(str(dists.min()))
-                    #plt.show()
                     for ij in xrange( len( pos ) ): self.hits[ axijs[ij][1][:-1], axijs[ij][0][:-1] ] = 0
                     I.extend( axijs[-1][1] )
                     J.extend( axijs[-1][0] )
@@ -288,6 +304,10 @@ class AxisReader( object ):
         return [ J+self.yl, I+self.xl, B ]
 
     def __call__( self, MAXITER=100000, inspect=False ):
+        '''
+        Run image up to a MAXITER number of iterations.
+        'inspect ' is for debugging purposes only.
+        '''
         self.GetFirstPoint()
         return self.Vectorize( MAXITER=MAXITER, inspect=inspect )
 
@@ -300,38 +320,20 @@ def ReadAxisLine( I, flow_from=None, method='std', MAXITER=100000 ):
     Convenience function for AxisReader class.
     Return a Line2D instance with width as attribute.
     
-    Args
-    ====
-    I : Image array of the channel axis over black background
-    Return
-    ======
-    Line2D with axis coordinates, intrinsic coordinate
-    and local width distribution dictionary attributes
+    Arguments
+    ---------
+    I                Image array of the channel axis over black background
+
+    Returns
+    -------
+    line             Line2D instance of the channel centerline and width
     '''
     
     r = AxisReader( I, start_from=flow_from, method=method )
     [ Xpx, Ypx, Bpx ] = r( MAXITER=MAXITER )
     print 'axis read with a recursion level of %s' % r.call_depth
-    
-    # Pixelled Line
-    # -------------
     line = Line2D( x=Xpx, y=Ypx, B=Bpx )
     return line
-
-    ## # GeoReferenced Line
-    ## # ------------------
-    ## GR = GeoReference( I, GeoTransf )
-    ## X, Y = GR.RefCurve( Xpx, Ypx )
-    ## B = Bpx * GeoTransf['PixelSize']
-    ## geoline = Line2D( [ X, Y ] )
-    ## geoline.attr( 'B', B )
-    ## dx = np.ediff1d( X, to_begin=0 )
-    ## dy = np.ediff1d( Y, to_begin=0 )
-    ## ds = np.sqrt( dx**2 + dy**2 )
-    ## s = np.cumsum( ds )
-    ## geoline.attr( 's', s )
-    ## geoline.attr( 'L', line.d['s'][-1] )
-    #return line, geoline
 
 
 

@@ -9,5 +9,3 @@ __all__ = [
     'Thresholding', 'SegmentationIndex',
     'Unwrapper', 'BarFinder', 'TemporalBars', 'FreeTemporalBars'
     ]
-
-

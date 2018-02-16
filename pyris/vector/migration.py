@@ -1,41 +1,51 @@
+# ==================================================
+# Module: vector
+# File: migration.py
+# Package: PyRIS
+# Author: Federico Monegaglia
+# Date: April 2016
+# Description: Migration vectors and bend separation
+# ==================================================
+
 from __future__ import division
 import numpy as np
 from scipy import interpolate
-from ..misc import NaNs, Intersection, PolygonCentroid
+from ..misc import NaNs, Intersection
 from .interpolation import InterpPCS, CurvaturePCS
 import matplotlib.pyplot as plt
-
-npv = np.__version__.split('.')
-if int(npv[0]) == 1 and int(npv[1]) >= 12:
-    # XXX: There's an Issue with the gradient function in NumPy 1.12.0 !
-    def gradient( y, dx=None ):
-        if dx is None:
-            return np.concatenate((
-                np.array([ (y[1]-y[0]) ]).flatten(),
-                np.array([ (y[2:]-y[:-2]) ]).flatten(),
-                np.array([ (y[-1]-y[-2]) ]).flatten(),
-            ))
-        else:
-            return np.concatenate((
-                np.array([ (y[1]-y[0]) / (dx[1]-dx[0]) ]).flatten(),
-                np.array([ (y[2:]-y[:-2]) / (dx[2:]-dx[:-2]) ]).flatten(),
-                np.array([ (y[-1]-y[-2]) / (dx[-1]-dx[-2]) ]).flatten(),
-            ))
-else:
-    gradient = np.gradient
 
 
 class AxisMigration( object ):
 
     '''
-    MigRateBend - Read a List of River Planforms, Locate Individual Bends, compute Migration Rates
+    AxisMigration( object )
+    =======================
+
+    A callable class for computing Bend Separation and Migration Vectors
+
+    Arguments
+    ---------
+    Xseries      Temporal sequence (list) of x coordinates of the river centerline
+    Yseries      Temporal sequence (list) of y coordinates of the river centerline
+
+    Returns
+    -------
+    dx           Temporal sequence (list) of x component of the centerline migration vectors
+    dy           Temporal sequence (list) of y component of the centerline migration vectors
+    dz           Temporal sequence (list) of the magnitude of the centerline migration vectors
+    Css          Temporal sequence (list) of the smoothed planform curvature
+    BI           Temporal sequence (list) of the bed indexes
+    B12          Temporal sequence (list) of the next bed indexes (where the current bend goes)
+    BUD          Temporal sequence (list) of the bend upstream-downstream index
     '''
 
     Css = []
     method = 'curvature' # distance must be taken away
     
     def __init__( self, Xseries, Yseries ):
-        '''Constructor - Get Planforms'''
+        '''
+        Get Subsequent Channel Planforms
+        '''
         self.data = []
         for x, y in zip( Xseries, Yseries ):
             x, y = np.asarray(x), np.asarray(y)
@@ -48,19 +58,20 @@ class AxisMigration( object ):
             for i in xrange( 1, theta.size ): # Set theta continuous
                 if (theta[i]-theta[i-1])/np.pi > +1.9: theta[i] -=2*np.pi
                 if (theta[i]-theta[i-1])/np.pi < -1.9: theta[i] +=2*np.pi
-            c = -gradient( theta, gradient(s) )
+            c = -np.gradient( theta ) / np.gradient( s )
             self.data.append( { 'x': x, 'y': y, 's': s, 'c':c, 't':theta, 'r':rtheta } )
         return None
 
     def IterData( self ):
-        '''Data Iterator'''
+        '''Planform data iterator'''
         for i, d in enumerate( self.data ): yield i, d
 
     def IterData2( self ):
-        '''Data Pair Iterator'''
+        '''Planform data pair iterator'''
         for i, (d1, d2) in enumerate( zip( self.data[:-1], self.data[1:]) ): yield i, (d1, d2)
 
     def RevIterData2( self ):
+        '''Reverse planform data pair iterator'''
         for i, (d1, d2) in enumerate( zip( self.data[:-1][::-1], self.data[1:][::-1] ) ): yield ( len(self.data)-2-i ), (d2, d1)
 
     def Iterbends( self, Idx ):
@@ -256,7 +267,7 @@ class AxisMigration( object ):
         '''Find the orthogonal point to second line on the first one'''
         [ x1, y1, s1 ] = data1['x'], data1['y'], data1['s']
         [ x2, y2, s2 ] = data2['x'], data2['y'], data2['s']
-        if L is None: L = 10*gradient( s1 ).mean()
+        if L is None: L = 10*np.gradient( s1 ).mean()
         a0 = np.arctan2( ( y2[i2+1] - y2[i2-1] ), ( x2[i2+1] - x2[i2-1] ) )
         a = a0 - np.pi/2 # Local Perpendicular Angle
         P = np.array( [ x2[i2], y2[i2] ] )

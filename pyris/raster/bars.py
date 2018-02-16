@@ -1,3 +1,12 @@
+# ===========================================================
+# Module: vector
+# File: axis.py
+# Package: PyRIS
+# Author: Federico Monegaglia
+# Date: April 2016
+# Description: skeleton centerline extractor and vectorizator
+# ===========================================================
+
 from __future__ import division
 import os, sys
 import numpy as np
@@ -14,13 +23,22 @@ from ..misc.misc import GeoReference, NaNs
 class Unwrapper( object ):
 
     '''
+    Unwrapper( object )
+    ===================
+
     Unwrap the river channel by performing coordinate transform
     (x,y) --> (s,n)
 
-    Input
+    Arguments
     -----
     data        Output for a single river planform
+    mig         Output of the migration result for the current river planform
     GeoTransf   Geospatial Coordinate Transform
+
+    Methods
+    -------
+    unwrap( shape, Npts=100 )   Regrids the river planform over intrinsic and cartesian coordinates
+    interpolate( band )         Interpolates the band values over the regridded reference system    
     '''
 
     def __init__( self, data, mig, GeoTransf ):
@@ -83,7 +101,18 @@ class Unwrapper( object ):
 class BarFinder( object ):
 
     '''
-    Find Bars using in-channel Pixel Classification
+    BarFinder( object )
+    ===================
+
+    A callable class to detect bare sediment bars along channels
+
+    Arguments
+    ---------
+    unwrapper         An 'Unwrapper' instance
+    bands             A sequence of EO bands as extracted by LoadLandsatData
+    close             Apply binary_closing to the bar mask (default True)
+    remove_small      Remove very small detected bars (default True)
+
     '''
 
 
@@ -128,16 +157,6 @@ class BarFinder( object ):
             R=Wbands['R'], G=Wbands['G'], B=Wbands['B'],
             NIR=Wbands['NIR'], MIR=Wbands['MIR'], SWIR=Wbands['SWIR'],
             index='BAR', method='global' ) ## This must be made locally, otherwise we dont see bars eventually
-
-        #plt.figure()
-        #plt.imshow( np.dstack((bands['MIR'],bands['NIR'],bands['R'])) )
-        #plt.figure()
-        #plt.pcolormesh( self.unwrapper.XC, self.unwrapper.YC, Idx, cmap='Spectral' )
-        #plt.axis('equal')
-        #plt.figure()
-        #plt.pcolormesh( self.unwrapper.XC, self.unwrapper.YC, Bars, cmap='Spectral' )
-        #plt.axis('equal')
-        #plt.show()
         
         # Apply a Convex Hull to Channel Bars
         #Bars = mm.convex_hull_object( Bars )
@@ -349,6 +368,13 @@ class BarFinder( object ):
 
 class TemporalBars( object ):
 
+    '''
+    TemporalBars( object )
+    ======================
+
+    A class to reconstruct the temporal dynamics of bare sediment bars along rivers
+    
+    '''
     def __init__( self ):
         '''Perform a Temporal Analysis of Channel Bars'''
         self.T = []
@@ -546,6 +572,13 @@ class TemporalBars( object ):
 
 class FreeTemporalBars( TemporalBars ):
 
+    '''
+    FreeTemporalBars( TemporalBars )
+    ================================
+
+    A class to reconstruct the temporal dynamics of free migrating bare sediment bars
+    '''
+    
     def AccumulateBends( self ):
         
         '''For each bend we follow its history through indices'''
@@ -831,6 +864,5 @@ class FreeTemporalBars( TemporalBars ):
             plt.plot(si, dsi, 'o')
 
             plt.show()
-
 
         return S, N, X, Y, Z, Si, Ni, DSi, DNi, Yi, Wi

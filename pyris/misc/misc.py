@@ -1,3 +1,11 @@
+# ==================================================
+# Module: misc
+# Package: PyRIS
+# Author: Federico Monegaglia
+# Date: April 2016
+# Description: Collection of miscellaneous functions
+# ==================================================
+
 from __future__ import division
 import os
 import numpy as np
@@ -9,6 +17,7 @@ from skimage.morphology import closing, disk
 import gdal
 import warnings
 
+# Matplotlib Setting
 mpl.rc( 'font', size=20 )
 mpl.rcParams['text.latex.preamble'] = [
     r'\usepackage{siunitx}',
@@ -21,11 +30,79 @@ mpl.rcParams['text.latex.preamble'] = [
 mpl.rcParams['axes.formatter.limits'] = [-3,3]
 plt.close( 'all' )
 
+
+# Functions
+# =========
+def ediff1d0( x ):
+    '''
+    Compute the element-wise different of an array starting from 0
+    '''
+    if len( x ) == 0:
+        return np.ediff1d( x )
+    return np.ediff1d( x, to_begin=0 )
+
+
+def NaNs( N ):
+    '''
+    Create a 1d array of NaNs of size N
+    '''
+    return np.full( N, np.nan )
+
+
+def crossprod2( v1, v2 ):
+    '''
+    3rd component of 2d vectors cross product
+    '''
+    return v1[0]*v2[1] - v1[1]*v2[0]
+
+
+def Intersection( P, Q, R, S, return_point=True ):
+    '''Check if two segments PQ and RS intersect and where'''
+    QP = Q - P
+    CRS = crossprod2( R, S ) 
+    t = ( QP[0]*S[1] - S[0]*QP[1] ) / CRS
+    u = ( QP[0]*R[1] - R[0]*QP[1] ) / CRS
+    if ( abs(CRS) > 0 and 0 <= abs(t) <= 1 and 0 <= abs(u) <= 1 ):
+        # Segments Intersect!
+        if return_point: return True, P + t*R
+        else: return True
+    if return_point: return False, NaNs(2)
+    else: return False
+
+
+def LoadLandsatData( dirname ):
+    '''
+    Load Relevant Bands for the Current Landsat Data
+    '''
+    if any( [os.path.split(dirname)[-1].startswith( s ) for s in ['LC8', 'LC08']] ): bidx = range( 2, 8 )
+    else: bidx = range( 1, 6 ) + [7]
+    base = os.path.join( dirname, os.path.basename(dirname) )
+    ext = '.TIF'
+    bnames = [ ('_B'.join(( base, '%d' % i )))+ext for i in bidx ]
+    [ B, G, R, NIR, MIR, SWIR ] = [ imread( band ) for band in bnames ]
+    bands = [ R, G, B, NIR, MIR, SWIR ]
+
+    geo = gdal.Open( bnames[0] )
+    GeoTransf = {    
+        'PixelSize' : abs( geo.GetGeoTransform()[1] ),
+        'X' : geo.GetGeoTransform()[0],
+        'Y' : geo.GetGeoTransform()[3],
+        'Lx' : bands[0].shape[1],
+        'Ly' : bands[0].shape[0]
+        }
+    return bands, GeoTransf
+
+
 # Classes
 # =======
 class Line2D( object ): # This must be put down better!
-    
+    '''
+    Line2D - a class to store and manage channel centerline coordinates and width
+    '''
     def __init__( self, x=np.array([]), y=np.array([]), B=np.array([]) ):
+        '''
+        Read centerline and width sequences or initialize empty ones
+        '''
         dx = ediff1d0( x )
         dy = ediff1d0( y )
         ds = np.sqrt( dx**2 + dy**2 )
@@ -36,6 +113,9 @@ class Line2D( object ): # This must be put down better!
         return None
 
     def join( self, line2d ):
+        '''
+        Join two subsequent centerlines
+        '''        
         if len(self.x) == 0:
             ds = 0
         else:
@@ -47,16 +127,14 @@ class Line2D( object ): # This must be put down better!
         self.L = self.s[-1]
         return None
 
-def ediff1d0( x ):
-    if len( x ) == 0:
-        return np.ediff1d( x )
-    return np.ediff1d( x, to_begin=0 )
-
-
+    
 class GeoReference( object ):
     '''Provide Georeferenced Coordinates for an Image Object'''
 
     def __init__( self, GeoTransf ):
+        '''
+        Store a GeoTransf and define the extent of the EO image for viewing
+        '''
         self.GeoTransf = GeoTransf
         self.extent = [ GeoTransf['X'], # xmin
                         GeoTransf['X'] + GeoTransf['PixelSize']*GeoTransf['Lx'], # xmax
@@ -66,6 +144,7 @@ class GeoReference( object ):
         return None
 
     def RefCurve( self, X, Y, inverse=False ):
+        '''Compute pixel-to-georeferenced coordinate conversion (and inverse)'''
         X, Y = np.asarray(X), np.asarray(Y)
         if inverse:
             Cx = ( X - self.GeoTransf['X'] ) / self.GeoTransf['PixelSize']
@@ -80,11 +159,22 @@ class GeoReference( object ):
 
 class interactive_mask( object ):
 
+    '''
+    A callable class where the user can view an False Color composite
+    and select areas to include/exclude from the analysis
+    '''
+    
     def __init__( self, path ):
+        '''
+        Path to Landsat directory
+        '''
         self.path = os.path.normpath( path )
         self.name =  self.path.split( os.sep )[-1]
 
     def build_real_color( self ):
+        '''
+        Create an RGB  False Color composite
+        '''
         if any( [self.name.startswith( s ) for s in ['LC8', 'LC08']] ):
             warnings.warn( 'Landsat 8 may return distorted images as real color.', Warning )
             b1, b2, b3 = 'B6', 'B5', 'B4'
@@ -94,6 +184,9 @@ class interactive_mask( object ):
         return np.dstack( ( B1, B2, B3 ) )
 
     def _set_mask( self ):
+        '''
+        Interactively select areas through drag-and-drop
+        '''
         real_color = self.build_real_color()
         white_masks = []
         plt.ioff()
@@ -158,125 +251,12 @@ class interactive_mask( object ):
         masks = self._set_mask()
         return self.georeference( masks )
 
-
-
-
-def LoadLandsatData( dirname ):
-    '''Load Relevant Bands for the Current Landsat Data'''
-    if any( [os.path.split(dirname)[-1].startswith( s ) for s in ['LC8', 'LC08']] ): bidx = range( 2, 8 )
-    else: bidx = range( 1, 6 ) + [7]
-    base = os.path.join( dirname, os.path.basename(dirname) )
-    ext = '.TIF'
-    bnames = [ ('_B'.join(( base, '%d' % i )))+ext for i in bidx ]
-    [ B, G, R, NIR, MIR, SWIR ] = [ imread( band ) for band in bnames ]
-    bands = [ R, G, B, NIR, MIR, SWIR ]
-
-    geo = gdal.Open( bnames[0] )
-    GeoTransf = {    
-        'PixelSize' : abs( geo.GetGeoTransform()[1] ),
-        'X' : geo.GetGeoTransform()[0],
-        'Y' : geo.GetGeoTransform()[3],
-        'Lx' : bands[0].shape[1],
-        'Ly' : bands[0].shape[0]
-        }
-    return bands, GeoTransf
-
-
-class MaskedShow( object ):
-
-    def __init__( self, data ):
-        self.data = data
-
-    def get_mask(self, mask):
-        self.mask = mask
-
-    def show_masked( self ):
-        plt.figure()
-        m = plt.imshow( np.ma.masked_where( self.mask, self.data ), cmap=plt.cm.spectral )
-        n = plt.imshow( np.ma.masked_where( 1-self.mask, self.data ), cmap=plt.cm.gray )
-        plt.colorbar( m )
-        plt.show()
-
-
-class BW( object ):
-    '''
-    Interactive Black and White Image.
-    Allows Interaction with figures in order to modify the image array itself
-    by means of event handlings
-    '''
     
-    def __init__( self, img ):
-        self.bw = img.astype( np.uint8 )
-
-    def RemovePoints( self, rm=0 ):
-        '''Remove Points by selection'''
-        plt.ioff()
-        fig = plt.figure()
-        if rm==0: plt.title('Click on Pixels you want to remove')
-        elif rm==1: plt.title('Click on Pixels you want to add')
-        cm = plt.pcolormesh( self.bw, vmin=0, vmax=1, cmap='binary_r' )
-        plt.axis('equal')
-        def onclick( event ):
-            indexx = int(event.xdata)
-            indexy = int(event.ydata)
-            print("Index ({0},{1}) will be set to {2}".format(
-                    indexx, indexy, rm) )
-            self.bw[indexy, indexx] = rm
-            cm.set_array( self.bw.ravel() )
-            event.canvas.draw()
-        cid = fig.canvas.mpl_connect( 'button_press_event', onclick )
-        plt.show()
-        
-    def RemoveRectangle( self, rm=0 ):
-        '''Remove an Entire Rectangle from bw figure'''
-        plt.ioff()
-        fig = plt.figure()
-        if rm==0: plt.title('Select rectangle you want to remove')
-        elif rm==1: plt.title('Select rectangle you want to add')
-        cm = plt.pcolormesh( self.bw, vmin=0, vmax=1, cmap='binary_r' )
-        plt.axis('equal')
-        x_press = None
-        y_press = None
-        def onpress(event):
-            global x_press, y_press
-            x_press = int(event.xdata) if (event.xdata != None) else None
-            y_press = int(event.ydata) if (event.ydata != None) else None
-        def onrelease(event):
-            global x_press, y_press
-            x_release = int(event.xdata) if (event.xdata != None) else None
-            y_release = int(event.ydata) if (event.ydata != None) else None
-            if (x_press != None and y_press != None
-                and x_release != None and y_release != None):
-                (xs, xe) = (x_press, x_release+1) if (x_press <= x_release) \
-                  else (x_release, x_press+1)
-                (ys, ye) = (y_press, y_release+1) if (y_press <= y_release) \
-                  else (y_release, y_press+1)
-                print( "Slice [{0}:{1},{2}:{3}] will be set to {4}".format(
-                    xs, xe, ys, ye, rm) )
-                self.bw[ys:ye, xs:xe] = rm
-                cm.set_array( self.bw.ravel() )
-                plt.fill( [xs,xe,xe,xs,xs], [ys,ys,ye,ye,ys], 'r', alpha=0.25 )
-                event.canvas.draw()
-            x_press = None
-            y_press = None
-        cid_press   = fig.canvas.mpl_connect( 'button_press_event'  , onpress   )
-        cid_release = fig.canvas.mpl_connect( 'button_release_event', onrelease )
-        plt.show()
-
-    def AddPoints( self ):
-        '''Add Points by selection'''
-        return self.RemovePoints( rm=1 )
-
-    def AddRectangle( self ):
-        '''Remove an Entire Rectangle from bw figure'''
-        return self.RemoveRectangle( rm=1 )
-
 class MaskClean( object ):
 
     '''
-    Interactive Black and White Image.
-    Allows Interaction with figures in order to modify the image array itself
-    by means of event handlings
+    A callable class where the user can select areas to include/exclude from the analysis
+    directly from a mask
     '''
     
     def __init__( self, bw, bg=None ):
@@ -320,74 +300,3 @@ class MaskClean( object ):
         plt.show()
         return self.bw
 
-
-def ShowRasterData( data, label='', title='' ):
-    '''Return a GridSpec Instance with Raster imshow,
-    colorbar and histogram of its values'''
-
-    # Set figure and axes
-    w, h = plt.figaspect(0.5)
-    fig = plt.figure( figsize=(w,h) )
-    gs = GridSpec(100,100,bottom=0.18,left=0.08,right=0.98)
-    ax1 = fig.add_subplot( gs[:,:50] ) # Left
-    ax2 = fig.add_subplot( gs[:10,55:] ) # Upper Right
-    ax3 = fig.add_subplot( gs[40:,55:] ) # Lower Right    
-    # Plot Data
-    cs = ax1.imshow( data )
-    if title != '': ax1.set_title( r'%s' % title )
-    fig.colorbar(cs, label=(r'%s values' % label).strip(), ax=ax1, cax=ax2, orientation='horizontal')
-    # Values Histogram
-    x = np.linspace(np.nanmin(data[np.isfinite(data)]), np.nanmax(data[np.isfinite(data)]), 1000)
-    hist, bins = np.histogram( data.flatten(), bins=x, normed=True )
-    bins = 0.5*(bins[1:]+bins[:-1])
-    y = np.linspace(0, 2*hist.max(), x.size)
-    x[0], x[-1] = x[1], x[-2] # Apply a Manual Fix
-    X, Y = np.meshgrid( x, y )
-    Z = X
-    ax3.pcolor( X, Y, Z )
-    ax3.fill_between( bins, y.max(),
-                      hist, color='w' )
-    ax3.set_xlim([x.min(), x.max()])
-    ax3.set_ylim([0, 1.2*hist.max()])
-    ax3.set_xlabel( (r'%s values' % label).strip() )
-    ax3.set_ylabel( r'frequency' )
-    return fig
-
-
-
-def NaNs( N ):
-    '''Create a 1d array of NaNs of size N'''
-    return np.full( N, np.nan )
-
-def crossprod2( v1, v2 ):
-    '''3rd component of 2d vectors cross product'''
-    return v1[0]*v2[1] - v1[1]*v2[0]
-
-def Intersection( P, Q, R, S, return_point=True ):
-    '''Check if two segments PQ and RS intersect and where'''
-    QP = Q - P
-    CRS = crossprod2( R, S ) 
-    t = ( QP[0]*S[1] - S[0]*QP[1] ) / CRS
-    u = ( QP[0]*R[1] - R[0]*QP[1] ) / CRS
-    if ( abs(CRS) > 0 and 0 <= abs(t) <= 1 and 0 <= abs(u) <= 1 ):
-        # Segments Intersect!
-        if return_point: return True, P + t*R
-        else: return True
-    if return_point: return False, NaNs(2)
-    else: return False
-
-def PolygonCentroid( x, y, return_area=False ):
-    if not np.allclose( [x[0], y[0]], [x[-1], y[-1]] ):
-        x = np.append( x, x[0] )
-        y = np.append( y, y[0] )
-    a = x[:-1] * y[1:]
-    b = x[1:] * y[:-1]
-    A = 0.5 * (a - b).sum()    
-    cx = x[:-1] + x[1:]
-    cy = y[:-1] + y[1:]
-    Xc = np.sum( cx*(a-b) ) / (6*A)
-    Yc = np.sum( cy*(a-b) ) / (6*A)
-    X = np.array([Xc, Yc])
-    if return_area:
-        return X, A
-    return X

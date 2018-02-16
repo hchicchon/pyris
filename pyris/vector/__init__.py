@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import interpolate
-from ..misc import NaNs, Intersection, PolygonCentroid
+from ..misc import NaNs, Intersection
 from axis import AxisReader, ReadAxisLine
 from interpolation import InterpPCS, CurvaturePCS, WidthPCS
 from migration import AxisMigration
