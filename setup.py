@@ -50,7 +50,6 @@ setup(
     url = 'https://github.com/fmonegaglia/pyris',
     install_requires = [ 'numpy', 'scipy', 'matplotlib', 'scikit-image', 'gdal' ],
     packages = [ 'pyris', 'pyris.config', 'pyris.misc', 'pyris.raster', 'pyris.vector' ],
-    py_modules = [ 'misc', 'raster', 'vector' ],
     scripts = [pyris_script],
     
 )
