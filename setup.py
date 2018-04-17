@@ -9,6 +9,16 @@
 # Python - RIvers from Satellites
 
 from distutils.core import setup
+import platform
+
+pyris_script = 'pyris/bin/pyris'
+
+# Proper Windows installation
+if platform.system() == 'Windows':
+    import shutil
+    pyris_win_script = 'pyris/bin/pyris.py'
+    shutil.copyfile(pyris_script, pyris_win_script)
+    pyris_script = pyris_win_script
 
 description = 'PyRIS :: Python - RIvers by Satellites'
 long_description = '\n'.join((
@@ -38,10 +48,10 @@ setup(
     description = description,
     long_description = long_description,
     url = 'https://github.com/fmonegaglia/pyris',
-    install_requires = [ 'numpy', 'matplotlib', 'scikit-image', 'gdal' ],
+    install_requires = [ 'numpy', 'scipy', 'matplotlib', 'scikit-image', 'gdal' ],
     packages = [ 'pyris', 'pyris.config', 'pyris.misc', 'pyris.raster', 'pyris.vector' ],
     py_modules = [ 'misc', 'raster', 'vector' ],
-    scripts = ['pyris/bin/pyris'],
+    scripts = [pyris_script],
     
 )
     
