@@ -16,7 +16,7 @@ pyris_script = 'pyris/bin/pyris'
 # Proper Windows installation
 if platform.system() == 'Windows':
     import shutil
-    pyris_win_script = 'pyris/bin/pyris.py'
+    pyris_win_script = 'pyris/bin/pyrisw.py'
     shutil.copyfile(pyris_script, pyris_win_script)
     pyris_script = pyris_win_script
 
