@@ -529,9 +529,9 @@ def migration_rates( axisfiles, migdir, columns=(0,1), show=False, pfreq=1 ):
         plt.show()
 
 
-def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, free=False ):
+def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
     '''
-    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, free=False ):
+    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
     ===========================================
 
     Compute bare sediment bars morphodynamics
@@ -544,7 +544,6 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
     migdir            directory containing migration vectors and bend separation files
     bardir            directory where bare sediment bar morphodynamic files will be stored
     show              show results in a window at the end of the computation (default False)
-    free              dominant sediment bars are migrating bars (defaul False)
 
     Returns
     -------
@@ -553,8 +552,7 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False, f
     
     axis_files = [ os.path.join( axisdir, f ) for f in sorted( os.listdir( axisdir ) ) ]
     found_files = []
-    if not free: bars = TemporalBars()
-    else: bars = FreeTemporalBars()
+    bars = FreeTemporalBars()
     
     for i_file, axis_file in enumerate( axis_files ):
         basename = os.path.splitext( os.path.split( axis_file )[-1] )[0]
