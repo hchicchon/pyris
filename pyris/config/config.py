@@ -25,7 +25,6 @@ def default_config():
     cf.add_section( 'Segmentation' )
     cf.set( 'Segmentation', 'method', 'MIX' )
     cf.set( 'Segmentation', 'thresholding', 'global' )
-    cf.set( 'Segmentation', 'white_masks', [] )
     cf.set( 'Segmentation', 'black_masks', [] )
 
     cf.add_section( 'Pruning' )
