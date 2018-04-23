@@ -112,14 +112,6 @@ if hasattr( args, 'settings' ):
                 cf.set( section, key, val )
                 print 'Set: [%s] %s = %s' % ( section, key, val )
 
-# Interactiverly Draw White Mask
-# ------------------------------
-if args.select_white_mask is not None:
-    from pyris.misc import interactive_mask
-    print 'Select white masks'
-    white_masks = interactive_mask( args.select_white_mask )()
-    cf.set( 'Segmentation', 'white_masks', white_masks )
-
  # Interactiverly Draw Black Mask
 # ------------------------------
 if args.select_black_mask is not None:
