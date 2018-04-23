@@ -468,7 +468,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
         # Save Axis Properties
         print 'saving main channel data...'
         save( axisfile, ( x_PCS, y_PCS, s_PCS, theta_PCS, Cs_PCS, B_PCS, xp_PCS, yp_PCS ) )
-        return None
+    return None
         
 
 def migration_rates( axisfiles, migdir, columns=(0,1), show=False, pfreq=1 ):
