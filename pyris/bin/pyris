@@ -124,8 +124,9 @@ if args.select_black_mask is not None:
 # ------------------------
 if args.config is not None:
     with open( args.config, 'w' ) as cfg_file: cf.write( cfg_file )
-    if args.init: print 'Configuration file %s created. Exiting.' % args.config
-    sys.exit()
+    if args.init:
+        print 'Configuration file %s created. Exiting.' % args.config
+        sys.exit()
 
 
 # ===================
