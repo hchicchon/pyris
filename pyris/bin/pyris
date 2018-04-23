@@ -15,19 +15,6 @@ try:
 except ImportError:
     import configparser as ConfigParser
 
-class StoreDictSet( argparse.Action ):
-    '''Read a Settings Dictionary from the command line and store it in the arguments' namespace'''
-    def __call__( self, parser, namespace, str_settings, option_string=None ):
-        settings = {}
-        for option in str_settings:
-            name, value = option.split( '=' )
-            settings[ name ] = value
-        if hasattr( namespace, 'settings' ):
-            setattr( namespace, 'settings', dict( namespace.settings.items() + settings.items() ) )
-        else:
-            setattr( namespace, 'settings', settings )
-        return None
-
 class ParserException( Exception ): pass
 
 
@@ -38,8 +25,6 @@ parser = argparse.ArgumentParser( description='PyRIS :: Python - RIvers from Sat
 # Config Settings
 parser.add_argument( 'config', nargs='?', help='input configuration file' )
 parser.add_argument( '-i', '--init', action='store_true', help='initialize a config file with default settings' )
-parser.add_argument( '-s', '--set', nargs='*', action=StoreDictSet, type=str, help='set variable in config file' )
-parser.add_argument( '--select-white-mask', type=str, help='interactively draw white masks from landsat data' )
 parser.add_argument( '--select-black-mask', type=str, help='interactively draw black masks from landsat data' )
 # Merge Landsat Folders
 parser.add_argument( '--merge', nargs='+', help='landsat folders to be merged together (requires gdal_merge)' )
@@ -60,24 +45,13 @@ parser.add_argument( '--axis-files', nargs='+', help='ordered sequence of files 
 parser.add_argument( '--axis-dir', type=str, help='dir in which to read ordered-by-name axis files (if --axis-files is not specified)' )
 parser.add_argument( '--axis-columns', nargs=2, default=[0,1], help='columns containing axis coordinates' )
 parser.add_argument( '--output-dir', default='migration_output', help='directory where outputs fof migration rates will be stored' )
-parser.add_argument( '--pfreq', default=10, type=int, help='an interpolation step between points to be used as a frequency filter (a few channel widths in pixels).' )
+parser.add_argument( '--pfreq', default=1, type=int, help='an interpolation step between points to be used as a frequency filter (a few channel widths in pixels).' )
 # Bars Position
 parser.add_argument( '-B', '--bars', action='store_true', help='compute the position of channel bars' )
-parser.add_argument( '--free', action='store_true', help='use method for free bars' )
 parser.add_argument( '--show', action='store_true', help='show results after computing' )
-# Debugging
-parser.add_argument('-D',  '--debug', action='store_true', help='run in debugging mode' )
 
 # Parse Arguments
 args = parser.parse_args()
-
-# Debug Mode
-# ----------
-if args.debug:
-    # This works only when run from the build source
-    pyris_debug_path = os.path.abspath( os.path.join( sys.argv[0], '../../../' ) )
-    sys.path.insert( 0, pyris_debug_path )
-
 
 # Initialize Config File
 # ----------------------
@@ -158,7 +132,8 @@ if args.select_black_mask is not None:
 # ------------------------
 if args.config is not None:
     with open( args.config, 'w' ) as cfg_file: cf.write( cfg_file )
-    if args.init: print 'Configuration file %s created' % args.config
+    if args.init: print 'Configuration file %s created. Exiting.' % args.config
+    sys.exit()
 
 
 # ===================
@@ -258,4 +233,4 @@ if args.bars:
     from pyris import bars_detection
     #if args.free_forced: raise NotImplementedError, 'free bars not yet implemented'
     title = 'Decesting bars from centerlines in internal directory: %s' % cf.get( 'Data', 'output' )
-    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=args.show, free=args.free )
+    bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=args.show )
