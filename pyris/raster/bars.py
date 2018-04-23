@@ -789,7 +789,7 @@ class FreeTemporalBars( TemporalBars ):
         Bavg = np.nanmean( hwidths ) # Time-Space Averaged Channel Width
 
         # Locate Bars and Define Migration Vectors on the Reference River Structure for ALL the TimeFrames
-        Si, Ni, DSi, DNi, Yi, Wi, Bi = [], [], [], [], [], [], [] # Pos(S), Pos(N), Migr(S), Migr(N), Year Index, Wavenumber
+        Xi, Yi, Si, Ni, DSi, DNi, YYi, Wi, Bi = [], [], [], [], [], [], [], [], [] # Pos(S), Pos(N), Migr(S), Migr(N), Year Index, Wavenumber
 
         for cnt, (BarCorr, Finder, T1, T2) in enumerate( zip(self.BarsCorr, self.Bars[:-1], self.T[:-1], self.T[1:]) ): # For all the TimeFrames
             dT = (T2-T1)
@@ -797,11 +797,12 @@ class FreeTemporalBars( TemporalBars ):
             for i in xrange( len(BarCorr) ): # For all the Channel Bars in the Current TimeFrame
                 if BarCorr[i][5]<0: continue
                 icnt += 1
+                Xi, Yi = BarCorr[i][3], BarCorr[i][4]
                 [ s0, n0 ] = BarCorr[i][12]/Bavg, Finder.unwrapper.N[BarCorr[i][2]] # Position (s,n)
                 [ ds, dn ] = BarCorr[i][10]/Bavg/dT, BarCorr[i][11]/dT # Migration Vector (ds,dn)
                 Si.append( s0 ), Ni.append( n0 )
                 DSi.append( ds ), DNi.append( dn )
-                Yi.append(cnt)
+                YYi.append(cnt)
                 Bi.append( self.Bars[0].unwrapper.b[np.abs(self.Bars[0].unwrapper.s-s0).argmin()] )
             # Channel Bar Wavenumbers for the Current TimeFrame
             b0 = hwidths[ cnt ] # Channel Width for the current TimeFrame
@@ -815,7 +816,7 @@ class FreeTemporalBars( TemporalBars ):
             except ValueError:
                 Wi += NaNs( icnt ).tolist()
 
-        Si, Ni, DSi, DNi, Yi, Wi = map( np.asarray, (Si, Ni, DSi, DNi, Yi, Wi) )
+        Xi, Yi, Si, Ni, DSi, DNi, YYi, Wi = map( np.asarray, (Xi, Yi, Si, Ni, DSi, DNi, YYi, Wi) )
 
         X, Y = self.Bars[0].unwrapper.XC, self.Bars[0].unwrapper.YC # Reference 
         S, N = self.Bars[0].unwrapper.Sc*self.Bars[0].unwrapper.b.mean()/Bavg, self.Bars[0].unwrapper.Nc
@@ -865,4 +866,4 @@ class FreeTemporalBars( TemporalBars ):
 
             plt.show()
 
-        return S, N, X, Y, Z, Si, Ni, DSi, DNi, Yi, Wi
+        return S, N, X, Y, Z, Xi, Yi, Si, Ni, DSi, DNi, YYi, Wi, BarCorr
