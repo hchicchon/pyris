@@ -596,11 +596,12 @@ def bars_detection( landsat_dirs, geodir, axisdir, migdir, bardir, show=False ):
         #barfinder.Show( bands )
         bars.GetFinder( time, barfinder )
 
-    S, N, X, Y, Z, Xi, Yi, Si, Ni, DSi, DNi, YYi, Wi = bars.CentroidsEvol( 0 )
+    S, N, X, Y, Z, Xi, Yi, Si, Ni, DSi, DNi, YYi, Wi, BarCorr = bars.CentroidsEvol( 0 )
 
     np.save( os.path.join(bardir, 'interpolation.npy'), (S,N,X,Y,Z) )
     np.save( os.path.join(bardir, 'bendsep.npy'), (bars.Bars[0].unwrapper.Bend, bars.Bars[0].unwrapper.b) )
     np.save( os.path.join(bardir, 'values.npy'), (Xi, Yi, Si, Ni, DSi, DNi, YYi, Wi) )
+    np.save( os.path.join(bardir, 'barcorr.npy'), BarCorr )
 
     if show: bars.Show( landsat_dirs, geodir )
     return None
