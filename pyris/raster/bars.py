@@ -797,7 +797,7 @@ class FreeTemporalBars( TemporalBars ):
             for i in xrange( len(BarCorr) ): # For all the Channel Bars in the Current TimeFrame
                 if BarCorr[i][5]<0: continue
                 icnt += 1
-                Xi, Yi = BarCorr[i][3], BarCorr[i][4]
+                Xi.append( BarCorr[i][3] ), Yi.append( BarCorr[i][4] )
                 [ s0, n0 ] = BarCorr[i][12]/Bavg, Finder.unwrapper.N[BarCorr[i][2]] # Position (s,n)
                 [ ds, dn ] = BarCorr[i][10]/Bavg/dT, BarCorr[i][11]/dT # Migration Vector (ds,dn)
                 Si.append( s0 ), Ni.append( n0 )
