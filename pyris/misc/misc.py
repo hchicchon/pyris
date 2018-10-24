@@ -74,8 +74,12 @@ def LoadLandsatData( dirname ):
     '''
     Load Relevant Bands for the Current Landsat Data
     '''
-    if any( [os.path.split(dirname)[-1].startswith( s ) for s in ['LC8', 'LC08']] ): bidx = range( 2, 8 )
-    else: bidx = range( 1, 6 ) + [7]
+    if any( [ os.path.split(dirname)[-1].startswith( s )
+              for s in ['LC8', 'LC08'] ] ):
+        bidx = range( 2, 8 )
+    else:
+        bidx = range( 1, 6 ) + [7]
+        
     base = os.path.join( dirname, os.path.basename(dirname) )
     ext = '.TIF'
     bnames = [ ('_B'.join(( base, '%d' % i )))+ext for i in bidx ]
@@ -88,7 +92,36 @@ def LoadLandsatData( dirname ):
         'X' : geo.GetGeoTransform()[0],
         'Y' : geo.GetGeoTransform()[3],
         'Lx' : bands[0].shape[1],
-        'Ly' : bands[0].shape[0]
+        'Ly' : bands[0].shape[0],
+        'GeoTransform' : geo.GetGeoTransform(),
+        'Projection' : geo.GetProjection(),
+        }
+    return bands, GeoTransf
+
+def LoadLandsatFiles( filelist ):
+    '''
+    Load Relevant Bands for the Current Landsat Data
+    '''
+    if any((
+            all(( os.path.split(f)[1].startswith('LC8')  for f in filelist )),
+            all(( os.path.split(f)[1].startswith('LC08') for f in filelist ))
+    )): bidx = range( 2, 8 )
+    else: bidx = range( 1, 6 ) + [7]
+    files = sorted( [ f for f in filelist
+                      if any(( os.path.splitext(f)[0].endswith('B%d' % k)
+                               for k in bidx )) ] )
+    [ B, G, R, NIR, MIR, SWIR ] = [ imread( band ) for band in files ]
+    bands = [ R, G, B, NIR, MIR, SWIR ]
+
+    geo = gdal.Open( files[0] )
+    GeoTransf = {
+        'PixelSize' : abs( geo.GetGeoTransform()[1] ),
+        'X' : geo.GetGeoTransform()[0],
+        'Y' : geo.GetGeoTransform()[3],
+        'Lx' : bands[0].shape[1],
+        'Ly' : bands[0].shape[0],
+        'GeoTransform' : geo.GetGeoTransform(),
+        'Projection' : geo.GetProjection(),
         }
     return bands, GeoTransf
 

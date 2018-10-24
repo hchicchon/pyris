@@ -44,6 +44,7 @@ __all__ = [
     'img_as_ubyte', 'imread', 'ndimage',
     # misc
     'GeoReference', 'NaNs', 'MaskClean',
+    'LoadLandsatData', 'LoadLandsatFiles'
     # raster
     'CleanIslands', 'RemoveSmallObjects', 'Skeletonize',
     'Pruner', 'Pruning',
@@ -52,7 +53,7 @@ __all__ = [
     # vector
     'AxisReader', 'ReadAxisLine',
     'InterpPCS', 'CurvaturePCS', 'WidthPCS',
-    'AxisMigration', 'LoadLandsatData',
+    'AxisMigration'
     ]
 
 # Import Everything from SubModules
@@ -438,7 +439,7 @@ def vectorize_all( geodir, maskdir, skeldir, config, axisdir, use_geo=True ):
             pdist = skel*(mask==lab)
             curr_axis = ReadAxisLine( pdist, flow_from=config.get('Data', 'flow_from'),
                                       method=config.get('Axis', 'reconstruction_method'),
-                                      MAXITER=int(config.get('Axis', 'maxiter')) )
+                                      MAXITER=_int(config.get('Axis', 'maxiter')) )
             axis.join( curr_axis )
 
         # Interpolation

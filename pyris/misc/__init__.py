@@ -1,3 +1,4 @@
-__all__ = [ 'GeoReference', 'NaNs', 'LoadLandsatData', 'Line2D', 'MaskClean' ]
+__all__ = [ 'GeoReference', 'NaNs', 'LoadLandsatData',
+            'LoadLandsatFiles', 'Line2D', 'MaskClean' ]
 
 from misc import *
